@@ -1,13 +1,1 @@
-SELECT 
-    acc.constraint_name,
-    ac.constraint_type,
-    acc.column_name
-FROM 
-    all_cons_columns acc
-JOIN 
-    all_constraints ac 
-    ON acc.constraint_name = ac.constraint_name
-WHERE 
-    ac.table_name = 'KYC_MAIN'
-    AND ac.owner = '<YOUR_SCHEMA_NAME>'
-    AND ac.constraint_type IN ('P', 'U');
+

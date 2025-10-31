@@ -1,11 +1,3 @@
-checksum : 
-The Validate CKSUM component checks if the file is complete and not corrupted.
-It compares the trailer checksum value in.trailer.cksum with the expected parameter ${CHK_SUM}.
-If both values match, Vali_Status is set to “Success”; otherwise, it is “Failure.”
-This ensures the input file’s integrity before it moves to the next processing step.
+The Separate Segment Files process takes one large input file that contains different types of records and separates them into multiple smaller files based on the record type. The component looks at the field record_type in each record and sends it to the correct output file.
 
-
-
-The Validate Record Count component ensures that the total number of detail records processed matches the record count specified in the file trailer. The process begins with the RLP-Get Rec Count (Rollup) component, which calculates the actual number of data records (rec_count) present in the input file. This computed count is then passed to the Validate Rec Count (Join) component, where it is compared against the trailer’s declared record count (in.trailer.record_cnt).
-
-If both values are equal, the validation result (Vali_Status) is marked as “Success.” If there is any difference, it is marked as “Failure.” The output record also includes the validation type (Trailer_Record_Count_Validation), the record count received from the trailer (Value_Received), the actual calculated count (Value_Calculated), and the file name for traceability. This ensures that no records are lost, duplicated, or missing during file transmission or processing.
+For example, records with type '0001' go to SEG0001, '0002' go to SEG0002, '0003' go to SEG0003, and all other records go to SEG0004. The file paths (like $SEG001_OUT_FILE) are defined for each output so the data for each record type is stored separately.

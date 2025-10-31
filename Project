@@ -1,3 +1,11 @@
-The Process Date Validation subgraph ensures that the input file being processed corresponds to the correct business process date. It begins by redefining the incoming header record structure using the Redefine Header Format component, which prepares the data for validation without altering its values. The reformatted header record is then passed to the Ref-Validate (Reformat) component, where the actual validation logic is applied.
+checksum : 
+The Validate CKSUM component checks if the file is complete and not corrupted.
+It compares the trailer checksum value in.trailer.cksum with the expected parameter ${CHK_SUM}.
+If both values match, Vali_Status is set to “Success”; otherwise, it is “Failure.”
+This ensures the input file’s integrity before it moves to the next processing step.
 
-The Ref-Validate component extracts the file’s process date from the header (file_timestamp field) by taking the first eight characters (in YYYYMMDD format) and compares it against the expected process date parameter ${PROCESS_DT}. If both dates match, the validation status is set to “Success”; otherwise, it is marked as “Failure.”
+
+
+The Validate Record Count component ensures that the total number of detail records processed matches the record count specified in the file trailer. The process begins with the RLP-Get Rec Count (Rollup) component, which calculates the actual number of data records (rec_count) present in the input file. This computed count is then passed to the Validate Rec Count (Join) component, where it is compared against the trailer’s declared record count (in.trailer.record_cnt).
+
+If both values are equal, the validation result (Vali_Status) is marked as “Success.” If there is any difference, it is marked as “Failure.” The output record also includes the validation type (Trailer_Record_Count_Validation), the record count received from the trailer (Value_Received), the actual calculated count (Value_Calculated), and the file name for traceability. This ensures that no records are lost, duplicated, or missing during file transmission or processing.

@@ -1,23 +1,7 @@
-import pandas as pd
-from sqlalchemy import create_engine
+Generate Records: creates one dummy record (num_records=1; fields line='|', newline='\n') to trigger the flow.
 
-# Replace placeholders with your actual details
-username = "your_username"
-password = "your_password"
-host = "your_host"          # e.g., "localhost" or "192.168.1.100"
-port = "1521"               # default Oracle port
-service_name = "your_service_name"  # or use SID
+Reformat: applies ${TRANSFORM1} (single transform; abort-on-first-reject) to build the batch metadata record (e.g., batch_id, rgn_id='NAM', cntry_cd='US', defaults/validations applied).
 
-# Create connection string
-connection_string = f"oracle+cx_oracle://{username}:{password}@{host}:{port}/?service_name={service_name}"
+Replicate: duplicates the metadata record—one copy for DB insert, one for the file branch.
 
-# Create SQLAlchemy engine
-engine = create_engine(connection_string)
-
-# Query your table
-query = "SELECT * FROM your_table_name"
-
-# Load into pandas DataFrame
-df = pd.read_sql(query, con=engine)
-
-print(df.head())
+Output Table: inserts into Oracle using $DBC_FILE and ${TABLE_NAME} with DML ${TBL_DML}/${TBL_DML_TYPE} for audit/process tracking

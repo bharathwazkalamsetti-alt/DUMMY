@@ -1,3 +1,19 @@
-The Input File component reads the incoming data file containing header, detail, and trailer records.
-It defines the file structure using metadata and loads the data into the graph.
-This data is then passed to the PBE – Separate Header Trailer Detail component for record-type separation.
+The PBE – Separate Header Trailer Detail component divides the mixed input data into three separate flows — Header, Trailer, and Detail — based on the value of the record_type field in each record. This separation allows downstream components to validate and process each record type independently.
+
+The component uses an expression defined in the parameter function to determine which output port a record should go to:
+
+if(record_type=='HEAD') 0
+else
+if(record_type=='TRAIL') 1
+else 2
+
+
+Here, records with record_type='HEAD' are sent to the Header output (port 0), records with record_type='TRAIL' go to the Trailer output (port 1), and all other records are treated as Detail and sent to port 2.
+
+This ensures that:
+
+Header records are routed for date and batch validations.
+
+Trailer records are sent for record count and checksum validations.
+
+Detail records proceed to data-level transformations and business rule checks.

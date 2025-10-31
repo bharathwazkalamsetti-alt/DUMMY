@@ -1,7 +1,1 @@
-Generate Records: creates one dummy record (num_records=1; fields line='|', newline='\n') to trigger the flow.
-
-Reformat: applies ${TRANSFORM1} (single transform; abort-on-first-reject) to build the batch metadata record (e.g., batch_id, rgn_id='NAM', cntry_cd='US', defaults/validations applied).
-
-Replicate: duplicates the metadata record—one copy for DB insert, one for the file branch.
-
-Output Table: inserts into Oracle using $DBC_FILE and ${TABLE_NAME} with DML ${TBL_DML}/${TBL_DML_TYPE} for audit/process tracking
+The Reformat-1 component adds a new field batch_dt (value: 20171129052135) to stamp each record with the batch timestamp while passing all other fields unchanged. The Batch File component then writes this enriched record into a pipe-delimited flat file ($FILE) containing batch_dt, batch_id, process_date, rgn_id, and cntry_cd for audit and batch tracking

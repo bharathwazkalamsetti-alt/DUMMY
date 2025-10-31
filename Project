@@ -1,3 +1,25 @@
-The Separate Segment Files process takes one large input file that contains different types of records and separates them into multiple smaller files based on the record type. The component looks at the field record_type in each record and sends it to the correct output file.
+Component :
+Generate Records	Generates initial dummy records to start the data flow.
+Prepares a simple structure used later for creating the header row.
+Ref-1 (Reformat):
+	Creates a static header record with field names for the summary.
+Defines columns like FILE NAME, VALIDATION TYPE, STATUS, VALUE RECEIVED, and VALUE CALCULATED.
+Ref-2 (Reformat):
+	Formats the actual validation result data coming from earlier validations.
+Cleans file names, replaces underscores, and maps received and calculated values.
+Concatenate:
+	Combines the header output (Ref-1) and data records (Ref-2).
+Ensures both header and data flow sequentially into a single output stream.
+Concatenate-1:
+	Merges multiple validation result flows into one combined dataset.
+Prepares the unified output for writing to the final summary file.
+Validation Summary:
+	Writes the final formatted validation summary to an output file.
 
-For example, records with type '0001' go to SEG0001, '0002' go to SEG0002, '0003' go to SEG0003, and all other records go to SEG0004. The file paths (like $SEG001_OUT_FILE) are defined for each output so the data for each record type is stored separately.
+
+Business Logic (Simple & Clear)
+
+The Gather Validation Results graph collects validation outcomes from various checks (like record count or trailer validation) and compiles them into one summary report.
+It first creates a header record using Ref-1 and formats the validation details using Ref-2.
+Both outputs are merged using Concatenate components and written into the Validation Summary file as a pipe (“|”)-delimited report.
+The final output provides a complete overview of all validation types, statuses, and values for each processed file.

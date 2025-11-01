@@ -1,12 +1,39 @@
+PBE SEPERATOR :
+The PBE component separates input records into header, trailer, and detail flows using the record_type field.
+Header records are validated for process date and structure, trailer records for record count and checksum, and detail records for business processing.
+This ensures each record type undergoes appropriate validation before loading.
+The logic used is: if(record_type=='HEAD') 0 else if(record_type=='TRAIL') 1 else 2
 
-UpdatE Failure :
-reformart :
-IT updates the batch statistics table when a batch fails during processing.
-It marks the batch status as ‘FAILED’ and logs audit details like update time, date, and system ID.
-The update is based on BATCH_ID and PROCESS_DATE to ensure accuracy.
-Any records that fail to update are sent to an error file for manual review
 
-update table :
-This query updates the batch statistics table for failed batch runs.
-It marks the batch as 'FAILED' and records who updated it, when, and at what time.
-The update targets only the record matching the given BATCH_ID and PROCESS_DATE
+PROCESS_DATE_validation :
+The Process Date Validation component validates whether the process date within the file header matches the expected business date (${BUSINESS_DATE}).
+It extracts the date from the file timestamp, compares it with the configured system date, and assigns a validation status of Success or Failure.
+All validation details, including the received date, calculated date, validation type, and file name (${INPUT_FILE_PATH}), are captured for audit.
+
+Redefine trailer formart :
+its acts as pass through component it will redefine Format to change a record format or rename fields.
+
+Replicate:
+it will make two copies of files.
+
+CHECK SUM VALIDATE :
+The Validate Checksum step compares the checksum value received from the source file (Value_Received) with the source trailer with the system-generated  checksum (Value_Calculated), using parameters like ${CALCULATED_CKSUM} and ${INPUT_FILE_PATH}.
+If both match,  file complete confirmed and status = “Success”; otherwise, status = “Failure.”
+
+Validate Record Count :
+The component verifies that the total number of records in the file trailer (Value_Received) equals the number of records processed (Value_Calculated) using parameters ${RECEIVED_COUNT}, ${CALCULATED_COUNT}, and ${INPUT_FILE_PATH} to ensure the completeness and correctness of the input data.
+
+RLP-Get Record Count:
+ component calculates the total number of data records processed from the input file.
+Validate Record Count:
+This  component  compares this calculated count with the count specified in the trailer record of the same file.
+If both match, validation status is marked as “Success”; otherwise, it is marked as “Failure.
+
+SEPERATE SEGMENT FILES :
+This ensures that each type of record (e.g., header, detail, trailer, others) is routed to its appropriate segment file.The PBE component partitions input records into four separate segment files (Seg0001–Seg0004) according to the record_type field value (0001, 0002, 0003, or others), enabling structured processing of each record type.
+
+Header records go to Seg0001_File
+
+Trailer or control records go to Seg0002_File and Seg0003_File
+
+All remaining detail records are routed to Seg0004_File

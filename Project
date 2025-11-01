@@ -1,14 +1,12 @@
-Update :
-Rollup
-The Rollup component is used to count the number of rejected records from the “Reject Lr” input file and pass the total count to the next component for logging or update tracking.
-Join:
-It takes the  batch metadata, processed counts, and rejection counts into a single record.
-It updates the KYC_GBL_MAIN.KYC_BATCH_STATISTICS table with totals and timestamps.
-parameters (${CREATE_ID}, ${LAST_UPD_TIME}) capture audit details.
-Any failed updates are logged in an error file for monitoring.
-update Table :
 
-it updates the batch statistics table with counts of total, successful, and failed records for each batch.
-It identifies the batch using BATCH_ID and PROCESS_DATE.
-Audit fields (LST_UPD_ID, LST_UPD_DT, LST_UPD_TIME) capture who and when the update happened.
-Finally, the batch status is marked as ‘COMPLETE’ once the update is successful.
+UpdatE Failure :
+reformart :
+IT updates the batch statistics table when a batch fails during processing.
+It marks the batch status as ‘FAILED’ and logs audit details like update time, date, and system ID.
+The update is based on BATCH_ID and PROCESS_DATE to ensure accuracy.
+Any records that fail to update are sent to an error file for manual review
+
+update table :
+This query updates the batch statistics table for failed batch runs.
+It marks the batch as 'FAILED' and records who updated it, when, and at what time.
+The update targets only the record matching the given BATCH_ID and PROCESS_DATE

@@ -1,16 +1,14 @@
-Reformart :
-The Reformat component generates batch control data using parameters such as shard_num, salt, and static system values.
-It assigns a unique or fixed batch_id, defines job attributes (batch_cd, batch_descr), and sets regional identifiers (rgn_id, cntry_cd).
-System-generated fields like create_id, lst_upd_id, timestamps, and process dates help keep a complete record of when and by whom the batch was created or updated.
-This output acts as the batch header record, which is used later for loading data into the database and creating the batch file
+Update :
+Rollup
+The Rollup component is used to count the number of rejected records from the “Reject Lr” input file and pass the total count to the next component for logging or update tracking.
+Join:
+It takes the  batch metadata, processed counts, and rejection counts into a single record.
+It updates the KYC_GBL_MAIN.KYC_BATCH_STATISTICS table with totals and timestamps.
+parameters (${CREATE_ID}, ${LAST_UPD_TIME}) capture audit details.
+Any failed updates are logged in an error file for monitoring.
+update Table :
 
-Replicate :
-it will create two file as copy one will sent to  table and another will sent to batch file(reformart-1)
-
-Table:
-It will create a table 
-
-Reformart-1 :
-
-This component adds a batch date and timestamp field to each record before sending the data to the output file (Batch File).
-It helps track when the batch was generated, ensuring each record has a consistent timestamp for audit or reconciliation purposes.
+it updates the batch statistics table with counts of total, successful, and failed records for each batch.
+It identifies the batch using BATCH_ID and PROCESS_DATE.
+Audit fields (LST_UPD_ID, LST_UPD_DT, LST_UPD_TIME) capture who and when the update happened.
+Finally, the batch status is marked as ‘COMPLETE’ once the update is successful.

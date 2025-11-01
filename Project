@@ -1,5 +1,4 @@
-The Input Table component extracts KYC trade transaction data from the staging table KYC_RGN_STG.TRADE_TXN_SMRY and joins it with the exception log table KYC_GBL_MAIN.GIW_BATCH_EXCP_LOG to identify records that previously failed processing.
-The join is performed on the fields ID, ID_TYPE, MONTH, YEAR, COUNTRY, and CLIENT_TYPE, ensuring that only matching records between staging and exception log are selected.
-Additionally, the query enriches the data with the business unit (GIW_BUSINESS_UNIT) from the exception log, exposed as CLIENT_SEGMENT_TYPE.
-Records are filtered to include only those created in the last 730 days (based on CREATE_DT) to avoid processing outdated data.
-The resulting dataset contains all staging fields along with the derived CLIENT_SEGMENT_TYPE and is passed to the next stage (PBKS) for partitioning and sorting.
+The graph extracts valid KYC transaction records from the Oracle table KYC_RGN_STG.${TABLE} using parameters like ${DBC_FILE} for database connection and ${TABLE} for dynamic table reference.
+It filters records where LOAD_STATUS is 'ADD_CORE_KYC' or 'ADD_PRODUCT_SERVICES' and CREATE_DT is within 730 days to ensure recent and valid data.
+The data is partitioned and sorted using ${PART_KEY} (fields such as ID, batch_dt, country, month, year) for optimized parallel processing.
+Finally, outputs are generated — ${EXCP_FILE} for the GIW staging extract and ${GFCID_LIST_FILE} for client mapping — ensuring parameterized, reusable, and traceable data loads.

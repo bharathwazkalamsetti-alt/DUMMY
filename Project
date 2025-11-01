@@ -1,29 +1,5 @@
-It takes input data from the create data component and reformats into new layout. 
-in my thing it will prepare data that will be inserted  into a tracking table (KYC_INBOUND_FILE_TRACKER).
-
-Reformat :
-The Reformat component checks if the incoming file is complete and correct.
-It uses parameters like ${INPUT_FILE_NAME}, ${INBOUND_DIR}, ${TRAILER_DATA}, and ${INPUT_FILE_LN_CT} to read the file name, path, trailer details, and total records.
-
-It then compares the number of records in the file with the number mentioned in the trailer.
-If both match, it marks the file as PASS; if not, it marks it as FAIL or NA (if trailer info is missing).
-The fail records will go for the insert for reject component
-
-
-Reject 
-This component creates entries for all rejected files during validation.
-It generates a unique ID, assigns the file name, and marks the record as FAILED.
-File counts are set to zero and metadata like source, process ID, and date are captured.
-All rejected details are prepared for insertion into the tracking table for audit purposes.
-
-Gather – Business Logic
-
-The Gather component merges outputs from both valid and rejected file flows.
-It combines data from the Reformat and Inserts for Rejected Records components.
-All records are collected into a single continuous stream for uniform processing.
-The merged data is sent to the KYC_INBOUND_FILE_TRACKER table for final tracking.
-
-
-This component is an Update Table component in Ab Initio.
-It takes data from the previous component (in this case, the Gather output — which includes both valid and rejected file records) and inserts it into the database table KYC_RGN_MAIN.KYC_INBOUND_FILE_TRACKER.
-The SQL statement defines how each record is mapped — assigning values for fields such as ID, FILE_NAME, INBOUND_DIRECTORY, ARRIVAL_DATE, TRAILER_COUNT, FILE_COUNT, COUNT_MATCH, SOURCE_SYSTEM, CREATE_DT, CREATE_ID, and AS_OF_DATE
+The Input Table component extracts KYC trade transaction data from the staging table KYC_RGN_STG.TRADE_TXN_SMRY and joins it with the exception log table KYC_GBL_MAIN.GIW_BATCH_EXCP_LOG to identify records that previously failed processing.
+The join is performed on the fields ID, ID_TYPE, MONTH, YEAR, COUNTRY, and CLIENT_TYPE, ensuring that only matching records between staging and exception log are selected.
+Additionally, the query enriches the data with the business unit (GIW_BUSINESS_UNIT) from the exception log, exposed as CLIENT_SEGMENT_TYPE.
+Records are filtered to include only those created in the last 730 days (based on CREATE_DT) to avoid processing outdated data.
+The resulting dataset contains all staging fields along with the derived CLIENT_SEGMENT_TYPE and is passed to the next stage (PBKS) for partitioning and sorting.

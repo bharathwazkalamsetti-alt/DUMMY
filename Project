@@ -1,4 +1,24 @@
-The graph extracts valid KYC transaction records from the Oracle table KYC_RGN_STG.${TABLE} using parameters like ${DBC_FILE} for database connection and ${TABLE} for dynamic table reference.
-It filters records where LOAD_STATUS is 'ADD_CORE_KYC' or 'ADD_PRODUCT_SERVICES' and CREATE_DT is within 730 days to ensure recent and valid data.
-The data is partitioned and sorted using ${PART_KEY} (fields such as ID, batch_dt, country, month, year) for optimized parallel processing.
-Finally, outputs are generated — ${EXCP_FILE} for the GIW staging extract and ${GFCID_LIST_FILE} for client mapping — ensuring parameterized, reusable, and traceable data loads.
+ID 
+BATCH_DT 
+
+COUNTRY 
+
+MONTH 
+
+YEAR 
+
+LOAD_STATUS 
+
+CREATE_DT 
+
+SOURCE_SYSTEM 
+
+CUSTOMER_ID 
+
+SEGMENT_TYPE
+
+PRODUCT_CODE 
+
+UPDATE_DT 
+
+DATA_SOURCE

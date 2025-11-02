@@ -1,22 +1,102 @@
-Create Data :
-The Create Data component initializes a base record structure with parameters like ${INPUT_FILE_NAME} and ${INBOUND_DIR} to prepare seed data for validation and loading into the tracking process.
-Reformart :
-The Reformat component uses parameters like ${INPUT_FILE_NAME}, ${INBOUND_DIR}, ${TRAILER_DATA}, ${TRAILER_CT_POSN}, ${TRAILER_DELIMITER}, ${INPUT_FILE_LN_CT}, ${SOURCE_SYSTEM}, and ${AS_OF_DT} to generate a unique, validated audit record with file metadata and COUNT_MATCH (PASS/FAIL).
-This structured record is then loaded into the KYC_INBOUND_FILE_TRACKER table for tracking inbound file status, validation results, and audit details.
+EXTRA GIW Exceptions:
+Input Table:
+This  component compares current trade transaction data from the {KYC_RGN_STG.TRADE_TXN_SMRY}   with past exception records to find transactions that still need correction,
+adds client segment details, filters to recent 2-year data, and inserts those results into the exception extract output for reprocessing or business review.
 
-Insert for reject records :
-This component creates records for files that failed validation using parameters like ${FILE_NAME}, ${SOURCE_SYSTEM}, and ${AS_OF_DT}.
-It marks them as “FAIL”, assigns default values (file_count = 0, trailer_count = 0), and loads them into the KYC_INBOUND_FILE_TRACKER table for tracking rejected files.
+partition by key and sorts:
+The PBKS component partitions and sorts the input data  by the keys — ID, batch date, country, month, and year. and are grouped together and sorted in order before further processing
 
-Gather :
-The Gather component combines data from multiple inputs — such as valid and rejected records — into one unified data flow.
+Replicate:
+It will create a copy of files.
 
-Gather inbound feed tracker :
-This component loads the processed file information into the KYC_RGN_MAIN.KYC_INBOUND_FILE_TRACKER table .
-It inserts each record with parameters such as :id, :file_name, :inbound_directory, :file_count, :trailer_count, :count_match, :source_system, :create_id, and :as_of_date, while system date (sysdate) is automatically populated for arrival_date and create_dt.
+Ref :
+The Reformat component takes the partitioned data from PBKS as input and outputs the same to lookup  file.
 
-Log : The log component records successful execution details and process information into an output file for monitoring and audit purposes.
-Error: The error component captures and writes records that failed during the database insertion into a separate error file for analysis and troubleshooting.
+excp extra :
+The EXCP Extr component writes validated exception records from the Ref output into a timestamped output file.
+
+create GFCID File:
+It will create a file with the keys GFCID,CLIENT_TYPE , COUNTRY ,MONTH,YEAR). with the name of KYC_INTERFACE_GCB_NAM_GIW_EXCP_SEG0001_GFCID_list
+
+---
+Input table :
+This query identifies and extracts only new or updated customer or product KYC records created in the last two years from the staging table.
+
+partition by key and sorts:
+The PBKS component partitions and sorts the input data  by the keys — ID, batch date, country, month, and year. and are grouped together and sorted in order before further processing
+
+Replicate:
+It will create a copy of files.
+
+Ref :
+The Reformat component takes the partitioned data from PBKS as input and outputs the same to lookup  file.
+
+stg  extra :
+The stg Extr component writes validated exception records from the Ref output into a timestamped output file.
+
+create GFCID File:
+The Ref-1 → GFCID_LIST_FILE flow creates a list of Global Financial Customer IDs from recent KYC trade data, adds a placeholder for client segmentation, and writes it to an output file.
+
+--------
+Validate_fields:
+
+Ref validate field count:
+Validate that each incoming segment (identified by a segment code like SEG0001, SEG0002, etc.) contains the correct number of fields.
+If a record doesn’t meet the expected field count, the transform raises a force_error, sending the record to rejects component.
+
+redefineFoemart:
+Copy the record from input and sends to output without chnages its records.
+
+Ref validate Fields:
+it  will checks each field for correct data type, length, and format . Records passing all validations are sent to the output, while invalid records are rejected for error handling
+
+Seg valid out Lookout :
+iT WILL going to create the  file as output  after completiuon of all components.
+
+Collect reject:
+
+It will collect all the reject out from ref validate count and fields and it will sent to one lookupp for auditng.
+
+---------------------------
+Load regular Feed:
+Seg in:
+Reads the validated input feed file (KYC_INTERFACE_GCB_NAM_GIW_REG_SEG0001_valid* containing customer segment data.
+
+Partition by Round-robin:
+Evenly distributes data records across multiple partitions for parallel processing.
+Replicate:
+Duplicates the input flow—one path goes for list creation, the other continues to staging transformation.
+
+Ref seg to stg:
+This component transforms validated segment data into staging-ready format by adding standard metadata and audit fields required for loading into the STG table.
+It assigns constant and system-generated values such as feed type, ID type, batch ID, create/update timestamps, and shard number to each record.
+
+Partion by Key:
+This component partitions the data based on the key fields — seg_ind, batch_dt, id, country, month, and year — to ensure all related records are grouped together for further processing
+
+sort :
+This component sorts the data by seg_ind, batch_dt, id, country, month, and year to arrange records in order for efficient grouping and rollup procesing.
+
+Roll up :
+The Rollup component groups records having the same key values and produces a single consolidated output record for each group.
+
+STG_LR :
+Its going to create the lookup file from prev component.
+
+stg Table:
+The component compares incoming records with existing table data using key fields; if a match is found, it updates the record with new counts, amounts, and audit details, otherwise it inserts a new record with complete financial and metadata information.
+
+Fuse component :
+Combines each input record with its corresponding error message and sends the enriched output downstream for writing into the reject or log files.
+
+reject file:
+Captures all rejected records with corresponding error messages during the STG table load process
+
+Log file :
+Maintains a record of the overall job execution status, including counts, errors, and completion messages.
+
+Unused file:
+Stores records that are not used in processing (neither inserted, updated, nor rejected)
+-------------------------------
 
 
-Reject: The reject component stores records rejected due to data validation or transformation issues, helping identify and correct bad data before reprocessing.

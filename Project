@@ -1,31 +1,22 @@
-Gather Validation :
+Create Data :
+The Create Data component initializes a base record structure with parameters like ${INPUT_FILE_NAME} and ${INBOUND_DIR} to prepare seed data for validation and loading into the tracking process.
+Reformart :
+The Reformat component uses parameters like ${INPUT_FILE_NAME}, ${INBOUND_DIR}, ${TRAILER_DATA}, ${TRAILER_CT_POSN}, ${TRAILER_DELIMITER}, ${INPUT_FILE_LN_CT}, ${SOURCE_SYSTEM}, and ${AS_OF_DT} to generate a unique, validated audit record with file metadata and COUNT_MATCH (PASS/FAIL).
+This structured record is then loaded into the KYC_INBOUND_FILE_TRACKER table for tracking inbound file status, validation results, and audit details.
 
-Generate Records:
-Initializes an empty dataset using parameters like ${PROCESS_DATE} and ${AS_OF_DT} as placeholders for validation results.
-Provides a base input for all upcoming components to maintain consistent data formatting.
+Insert for reject records :
+This component creates records for files that failed validation using parameters like ${FILE_NAME}, ${SOURCE_SYSTEM}, and ${AS_OF_DT}.
+It marks them as “FAIL”, assigns default values (file_count = 0, trailer_count = 0), and loads them into the KYC_INBOUND_FILE_TRACKER table for tracking rejected files.
 
--(Reformat – Header Record Creation)
+Gather :
+The Gather component combines data from multiple inputs — such as valid and rejected records — into one unified data flow.
 
-Defines static header fields — FILE_NAME, VALIDATION_TYPE, VALIDATION_STATUS, VALUE_RECEIVED, VALUE_CALCULATED — using constants.
-Prepares a fixed header record for the validation summary output structure.
+Gather inbound feed tracker :
+This component loads the processed file information into the KYC_RGN_MAIN.KYC_INBOUND_FILE_TRACKER table .
+It inserts each record with parameters such as :id, :file_name, :inbound_directory, :file_count, :trailer_count, :count_match, :source_system, :create_id, and :as_of_date, while system date (sysdate) is automatically populated for arrival_date and create_dt.
 
-Ref-2-2 (Reformat – Validation Data Formatting)
+Log : The log component records successful execution details and process information into an output file for monitoring and audit purposes.
+Error: The error component captures and writes records that failed during the database insertion into a separate error file for analysis and troubleshooting.
 
-Uses parameters like ${INPUT_FILE_NAME}, ${VALIDATION_TYPE}, ${VALIDATION_STATUS}, ${VALUE_RECEIVED}, and ${VALUE_CALCULATED} to format records.
-Extracts and standardizes filenames and validation outputs for readability and reporting.
 
-4️)Concatenate
-
-Combines the header record from Ref-1 with formatted validation results from Ref-2.
-Ensures a unified output where header and validation details appear sequentially.
-
-5️)Concatenate-1
-
-Merges data streams from multiple validation modules (e.g., record count, date, checksum) into one.
-Uses parameters like ${PROCESS_DATE} to align all validation results in a single dataset.
-
-6️)Validation Summary (Output File)
-
-Writes the merged validation results into a final timestamped output file —
-KYC_INTERFACE_GCB_NAM_GIW_REG_validation_result_${PROCESS_DATE}_${RUN_ID}.dat.
-Provides a full validation audit trail based on key parameters like ${PROCESS_DATE}, ${RUN_ID}, and ${INPUT_FILE_NAME}
+Reject: The reject component stores records rejected due to data validation or transformation issues, helping identify and correct bad data before reprocessing.

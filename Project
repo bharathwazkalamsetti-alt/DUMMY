@@ -1,39 +1,31 @@
-PBE SEPERATOR :
-The PBE component separates input records into header, trailer, and detail flows using the record_type field.
-Header records are validated for process date and structure, trailer records for record count and checksum, and detail records for business processing.
-This ensures each record type undergoes appropriate validation before loading.
-The logic used is: if(record_type=='HEAD') 0 else if(record_type=='TRAIL') 1 else 2
+Gather Validation :
 
+Generate Records:
+Initializes an empty dataset using parameters like ${PROCESS_DATE} and ${AS_OF_DT} as placeholders for validation results.
+Provides a base input for all upcoming components to maintain consistent data formatting.
 
-PROCESS_DATE_validation :
-The Process Date Validation component validates whether the process date within the file header matches the expected business date (${BUSINESS_DATE}).
-It extracts the date from the file timestamp, compares it with the configured system date, and assigns a validation status of Success or Failure.
-All validation details, including the received date, calculated date, validation type, and file name (${INPUT_FILE_PATH}), are captured for audit.
+-(Reformat – Header Record Creation)
 
-Redefine trailer formart :
-its acts as pass through component it will redefine Format to change a record format or rename fields.
+Defines static header fields — FILE_NAME, VALIDATION_TYPE, VALIDATION_STATUS, VALUE_RECEIVED, VALUE_CALCULATED — using constants.
+Prepares a fixed header record for the validation summary output structure.
 
-Replicate:
-it will make two copies of files.
+Ref-2-2 (Reformat – Validation Data Formatting)
 
-CHECK SUM VALIDATE :
-The Validate Checksum step compares the checksum value received from the source file (Value_Received) with the source trailer with the system-generated  checksum (Value_Calculated), using parameters like ${CALCULATED_CKSUM} and ${INPUT_FILE_PATH}.
-If both match,  file complete confirmed and status = “Success”; otherwise, status = “Failure.”
+Uses parameters like ${INPUT_FILE_NAME}, ${VALIDATION_TYPE}, ${VALIDATION_STATUS}, ${VALUE_RECEIVED}, and ${VALUE_CALCULATED} to format records.
+Extracts and standardizes filenames and validation outputs for readability and reporting.
 
-Validate Record Count :
-The component verifies that the total number of records in the file trailer (Value_Received) equals the number of records processed (Value_Calculated) using parameters ${RECEIVED_COUNT}, ${CALCULATED_COUNT}, and ${INPUT_FILE_PATH} to ensure the completeness and correctness of the input data.
+4️)Concatenate
 
-RLP-Get Record Count:
- component calculates the total number of data records processed from the input file.
-Validate Record Count:
-This  component  compares this calculated count with the count specified in the trailer record of the same file.
-If both match, validation status is marked as “Success”; otherwise, it is marked as “Failure.
+Combines the header record from Ref-1 with formatted validation results from Ref-2.
+Ensures a unified output where header and validation details appear sequentially.
 
-SEPERATE SEGMENT FILES :
-This ensures that each type of record (e.g., header, detail, trailer, others) is routed to its appropriate segment file.The PBE component partitions input records into four separate segment files (Seg0001–Seg0004) according to the record_type field value (0001, 0002, 0003, or others), enabling structured processing of each record type.
+5️)Concatenate-1
 
-Header records go to Seg0001_File
+Merges data streams from multiple validation modules (e.g., record count, date, checksum) into one.
+Uses parameters like ${PROCESS_DATE} to align all validation results in a single dataset.
 
-Trailer or control records go to Seg0002_File and Seg0003_File
+6️)Validation Summary (Output File)
 
-All remaining detail records are routed to Seg0004_File
+Writes the merged validation results into a final timestamped output file —
+KYC_INTERFACE_GCB_NAM_GIW_REG_validation_result_${PROCESS_DATE}_${RUN_ID}.dat.
+Provides a full validation audit trail based on key parameters like ${PROCESS_DATE}, ${RUN_ID}, and ${INPUT_FILE_NAME}

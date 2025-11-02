@@ -1,102 +1,12 @@
-EXTRA GIW Exceptions:
-Input Table:
-This  component compares current trade transaction data from the {KYC_RGN_STG.TRADE_TXN_SMRY}   with past exception records to find transactions that still need correction,
-adds client segment details, filters to recent 2-year data, and inserts those results into the exception extract output for reprocessing or business review.
-
-partition by key and sorts:
-The PBKS component partitions and sorts the input data  by the keys — ID, batch date, country, month, and year. and are grouped together and sorted in order before further processing
-
-Replicate:
-It will create a copy of files.
-
-Ref :
-The Reformat component takes the partitioned data from PBKS as input and outputs the same to lookup  file.
-
-excp extra :
-The EXCP Extr component writes validated exception records from the Ref output into a timestamped output file.
-
-create GFCID File:
-It will create a file with the keys GFCID,CLIENT_TYPE , COUNTRY ,MONTH,YEAR). with the name of KYC_INTERFACE_GCB_NAM_GIW_EXCP_SEG0001_GFCID_list
-
----
-Input table :
-This query identifies and extracts only new or updated customer or product KYC records created in the last two years from the staging table.
-
-partition by key and sorts:
-The PBKS component partitions and sorts the input data  by the keys — ID, batch date, country, month, and year. and are grouped together and sorted in order before further processing
-
-Replicate:
-It will create a copy of files.
-
-Ref :
-The Reformat component takes the partitioned data from PBKS as input and outputs the same to lookup  file.
-
-stg  extra :
-The stg Extr component writes validated exception records from the Ref output into a timestamped output file.
-
-create GFCID File:
-The Ref-1 → GFCID_LIST_FILE flow creates a list of Global Financial Customer IDs from recent KYC trade data, adds a placeholder for client segmentation, and writes it to an output file.
-
---------
-Validate_fields:
-
-Ref validate field count:
-Validate that each incoming segment (identified by a segment code like SEG0001, SEG0002, etc.) contains the correct number of fields.
-If a record doesn’t meet the expected field count, the transform raises a force_error, sending the record to rejects component.
-
-redefineFoemart:
-Copy the record from input and sends to output without chnages its records.
-
-Ref validate Fields:
-it  will checks each field for correct data type, length, and format . Records passing all validations are sent to the output, while invalid records are rejected for error handling
-
-Seg valid out Lookout :
-iT WILL going to create the  file as output  after completiuon of all components.
-
-Collect reject:
-
-It will collect all the reject out from ref validate count and fields and it will sent to one lookupp for auditng.
-
----------------------------
-Load regular Feed:
-Seg in:
-Reads the validated input feed file (KYC_INTERFACE_GCB_NAM_GIW_REG_SEG0001_valid* containing customer segment data.
-
-Partition by Round-robin:
-Evenly distributes data records across multiple partitions for parallel processing.
-Replicate:
-Duplicates the input flow—one path goes for list creation, the other continues to staging transformation.
-
-Ref seg to stg:
-This component transforms validated segment data into staging-ready format by adding standard metadata and audit fields required for loading into the STG table.
-It assigns constant and system-generated values such as feed type, ID type, batch ID, create/update timestamps, and shard number to each record.
-
-Partion by Key:
-This component partitions the data based on the key fields — seg_ind, batch_dt, id, country, month, and year — to ensure all related records are grouped together for further processing
+Gather:
+Merges multiple GFCID segment files into a single continuous flow of records.
 
 sort :
-This component sorts the data by seg_ind, batch_dt, id, country, month, and year to arrange records in order for efficient grouping and rollup procesing.
+Sorts all gathered records by client ID, batch date, country, month, and year.
+Rollup component:
+Summarizes multiple records into one per client, country, and time period by aggregating key attributes
+PBKS:
+Repartitions and sorts data by business keys before writing to the final GFCID list file.
 
-Roll up :
-The Rollup component groups records having the same key values and produces a single consolidated output record for each group.
-
-STG_LR :
-Its going to create the lookup file from prev component.
-
-stg Table:
-The component compares incoming records with existing table data using key fields; if a match is found, it updates the record with new counts, amounts, and audit details, otherwise it inserts a new record with complete financial and metadata information.
-
-Fuse component :
-Combines each input record with its corresponding error message and sends the enriched output downstream for writing into the reject or log files.
-
-reject file:
-Captures all rejected records with corresponding error messages during the STG table load process
-
-Log file :
-Maintains a record of the overall job execution status, including counts, errors, and completion messages.
-
-Unused file:
-Stores records that are not used in processing (neither inserted, updated, nor rejected)
--------------------------------
-
-
+GFCID_LIST_FILE:
+The GFCID List Creation process consolidates multiple segment-level GFCID datasets, sorts and aggregates them by client, batch, and period, and outputs a single unified GFCID list file ready for downstream KYC and regulatory data consumption.

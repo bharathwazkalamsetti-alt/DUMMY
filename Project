@@ -1,66 +1,49 @@
----------------
-STG EXTRA file -1
-Filter by expression :
-This component filters out records where load_status is equal to 'RGN FILTERED OUT', and passes all other records
-STG SXTRA FILTER Reject :
-records whose load_status is not 'RGN FILTERED OUT', and sends the rest to the reject file.
-Intermediate file :
-IT temporarily stores all valid  records from the filter step for further processing.
-Partion by Key :
-The data is divided into groups based on the combination of seg_ind, id, client_type, country, month, year, and juris_country so that all related records are processed together in the next step
-Sort :
-The data is sorted by seg_ind, id, client_type, country, month, year, and juris_country, with the most recent records appearing first based on lst_upd_dt and lst_upd_time in descending order
-Dedub:
-he component removes duplicate records by keeping only the first record (based on sort order) for each unique combination of seg_ind, id, client_type, country, month, year, and juris_country
-Actual Recieved:
-In the Actuals Received section, the Join-1 component performs an Inner Join between two input datasets using the key fields ($JOIN_KEY → {seg_ind; id; client_type; country; month; year; juris_country}). For every matched record, it sets the output field feed_type to 'REM' and combines all fields from the second input (in1) into the output.
-This step essentially merges related records from two sources and tags them as remediated (“REM”) transactions.
-STG Non- Remidiate:
-It writes all non-remediated transaction records (those not matched for remediation) into the final STG output file.
-------
-seg In1:
-PBKS:
-PBKS partitions the data by {seg_ind, id, client_segment, country, month, year, juris_country} and sorts it within each partition.
-Ref -1:
-he Ref-1 component reformats and enriches each record by mapping client_segment to client_type and adding system-generated audit fields.
-Replicate :
-I will copy the files and one will sent to actual remediation another will sent to list file for hirarcy,
-List hirarcy:
-extra hirarcy:
-Business Logic:
-Extracts client–country–month–year level hierarchy data from Oracle for the past 730 days.
-This forms the base dataset for building the KYC remediation hierarchy list.
-Join1 :
-Business Logic:
-Performs an inner join using {id, country, month, year} as the join key.
-Only matching records between the hierarchy data (in0) and reference dataset (in1) are retained.
-Non-matching records are sent to Trash.
+import pandas as pd
+import cx_Oracle
+import sqlalchemy
 
-Join 2:
-Business Logic:
-Performs an inner join using $JOIN_KEY (hierarchical key with segmentation and jurisdiction).
-It merges the filtered hierarchy data (in0) with client segmentation and jurisdiction details (in1).
-Result → fully enriched hierarchy records.
+# ----------------------------
+# Database connection settings
+# ----------------------------
+username = "your_username"
+password = "your_password"
+dsn = "host:port/service_name"   # Example: "localhost:1521/orclpdb1"
+table_name = "waz"               # existing Oracle table name
 
-Overall Logic :
-Using $DBC_FILE, the Hierarchy component extracts 2 years of client–country–month–year data, validates it via Join-1 on {id; country; month; year}, enriches it in Join-2 using $JOIN_KEY, and outputs the consolidated GFCID_LIST_FILE for KYC remediation
+# ----------------------------
+# Create SQLAlchemy engine for Oracle
+# ----------------------------
+engine = sqlalchemy.create_engine(f"oracle+cx_oracle://{username}:{password}@{dsn}")
 
--------
+# ----------------------------
+# Step 1: Get column names from Oracle table
+# ----------------------------
+with engine.connect() as conn:
+    query = f"""
+        SELECT column_name 
+        FROM all_tab_columns 
+        WHERE table_name = UPPER('{table_name}')
+        ORDER BY column_id
+    """
+    result = conn.execute(query)
+    columns_list = [row[0] for row in result]
 
-Actuals Reemeidate :
-Using $JOIN_KEY = {seg_ind; id; client_type; country; month; year; juris_country}, the “Actuals Remediated” component performs an inner join between two financial datasets. It applies $AI_XFR/kyc_interface_giw_${TABLE}_remediation.xfr to sum and merge trade finance and service amount fields, ensuring no null values. The output is tagged with feed_type = 'REM' and consolidated through the Gather component for further KYC remediation processing.
-STG LR Reemeidate:
-Joins and remediates financial transaction data using $JOIN_KEY and $AI_XFR transform, producing a consolidated STG lr - Remediated file containing summed, non-null, client-level metrics for KYC remediation feeds.
+print(f"Columns in table '{table_name}':")
+print(columns_list)
 
-Load STG Table:
-The Load STG Table component  loads data from the STG lr – Remediated file. It first executes ${STG_UPD_QUERY} to update existing records in KYC_RGN_STG.TRADE_TXN_SMRY_JURIS using the key {seg_ind, id, id_type, client_type, country, month, year, juris_country, batch_id}. If no match is found, it executes ${STG_INS_QUERY} to insert new records. This ensures that all remediated financial transactions are accurately reflected in the staging table.
+# ----------------------------
+# Step 2: Load file into DataFrame using these columns as headers
+# ----------------------------
+# Example: CSV file (change path as needed)
+file_path = "your_file.csv"
 
-Fuse -1:
-The Fuse-1 component merges each processed staging record with its corresponding error or status message.
-It takes the data from in0 (the actual transaction or KYC record) and combines it with the message from in1 (the load or validation result).
-The output record thus contains both the business information and the processing outcome, allowing easy reconciliation, auditing.
+# Use the list of columns as the header
+df = pd.read_csv(file_path, names=columns_list, header=0)
 
-1️⃣ It extracts raw KYC Trade Transaction Summary data and filters out invalid or duplicate records.
-2️⃣ It remediates and enriches the valid data by resolving missing or inconsistent values using business rules.
-3️⃣ It loads the cleaned data into the staging table, updating existing rows and inserting new ones.
-4️⃣ It separates failed or unused records into reject and unused files, and logs processing details for audit.
+print("\nDataFrame loaded successfully:")
+print(df.head())
+
+# ----------------------------
+# Step 3: (Optional) You can insert into another table
+# ----------------------------
+# df.to_sql("new_table_name", engine, if_exists="append", index=False)

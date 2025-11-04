@@ -1,49 +1,232 @@
-import pandas as pd
-import cx_Oracle
-import sqlalchemy
+Excellent — you’ve shared everything needed (including the Confluence flow, screenshots, and Vault UI process).
+Below is your **complete, step-by-step technical guide** — written clearly, in the same structure and terminology used in Citi’s **Lightspeed + COIN Vault Onboarding** process.
 
-# ----------------------------
-# Database connection settings
-# ----------------------------
-username = "your_username"
-password = "your_password"
-dsn = "host:port/service_name"   # Example: "localhost:1521/orclpdb1"
-table_name = "waz"               # existing Oracle table name
+You can directly use this as your **team SOP (Standard Operating Procedure)** or Confluence documentation.
 
-# ----------------------------
-# Create SQLAlchemy engine for Oracle
-# ----------------------------
-engine = sqlalchemy.create_engine(f"oracle+cx_oracle://{username}:{password}@{dsn}")
+---
 
-# ----------------------------
-# Step 1: Get column names from Oracle table
-# ----------------------------
-with engine.connect() as conn:
-    query = f"""
-        SELECT column_name 
-        FROM all_tab_columns 
-        WHERE table_name = UPPER('{table_name}')
-        ORDER BY column_id
-    """
-    result = conn.execute(query)
-    columns_list = [row[0] for row in result]
+# 🔐 **Vault Onboarding in Lightspeed – Detailed Implementation Steps**
 
-print(f"Columns in table '{table_name}':")
-print(columns_list)
+---
 
-# ----------------------------
-# Step 2: Load file into DataFrame using these columns as headers
-# ----------------------------
-# Example: CSV file (change path as needed)
-file_path = "your_file.csv"
+## **1️⃣ Purpose**
 
-# Use the list of columns as the header
-df = pd.read_csv(file_path, names=columns_list, header=0)
+Vault onboarding in Lightspeed allows teams to securely store and manage sensitive credentials (like Client IDs, secrets, and database passwords).
+Once onboarded, your Lightspeed pipelines and ECS deployments can fetch these secrets securely from **HashiCorp Vault** without hardcoding values.
 
-print("\nDataFrame loaded successfully:")
-print(df.head())
+---
 
-# ----------------------------
-# Step 3: (Optional) You can insert into another table
-# ----------------------------
-# df.to_sql("new_table_name", engine, if_exists="append", index=False)
+## **2️⃣ Prerequisites**
+
+Before onboarding Vault, confirm that you have:
+
+| Item                                      | Description                                                                        |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| **CSI ID**                                | Your team’s CSI (e.g., `CSI123456`).                                               |
+| **SOE ID**                                | Your personal SOE ID (for authentication).                                         |
+| **FID (Functional ID)**                   | A service account used for writing secrets in Vault. Example: `EUR\cdu-vault-fid`. |
+| **Existing Safe (optional)**              | Example: `cdu-vault_P_Safe` — check if one already exists for your domain.         |
+| **Admin/Developer access in Lightspeed**  | Required to enable Vault in your project.                                          |
+| **COIN Token (for API-based onboarding)** | If performing onboarding through Swagger UI.                                       |
+
+---
+
+## **3️⃣ Step 1 – Navigate to Your Project**
+
+1. Login to [Lightspeed UI](https://lightspeed.eeproduct.yourorg.net)
+2. Go to your project — e.g.,
+
+   ```
+   https://lightspeed/ui/applications/<AppID>/projects/<ProjectName>
+   ```
+3. Ensure you see the tabs:
+   **Builds | Deployments | Manifests | Settings**
+
+---
+
+## **4️⃣ Step 2 – Open Secrets Management**
+
+1. Click on the **Settings** tab (gear ⚙️ icon).
+2. Under settings, select **“Secrets Management.”**
+3. You’ll see an option called **Vault**.
+
+   * If it shows *“Enable Vault”*, onboarding is not yet done.
+   * If you already see Dev/UAT/Prod vault folders → it’s already onboarded.
+
+---
+
+## **5️⃣ Step 3 – Enable Vault**
+
+1. Click **Enable Vault**.
+
+2. You’ll see a pop-up form titled **“Enable Vault.”**
+
+   It will ask for:
+
+   * A **FID** for writing production secrets (e.g., `EUR\cdu-vault-fid`)
+   * Confirmation that this is a **non-personal** account.
+
+3. Click **Enable Vault.**
+
+Lightspeed will:
+
+* Create Vault folder structures (Dev, UAT, Prod)
+* Generate **CMP Requests** automatically for backend provisioning
+* Create **AD Groups** (Write and Auth Admin)
+* Begin linking to your organization’s HashiCorp Vault instance
+
+---
+
+## **6️⃣ Step 4 – Monitor CMP Requests**
+
+After you click **Enable Vault**, Lightspeed creates CMP requests automatically.
+
+You’ll see a message like:
+
+```
+Vault Quickstart: Setting up Vault...
+Pending completion of CMP requests:
+Development: WS131688235, WS131688216
+UAT: WS131688229, WS131688222
+Production: WS131688239, WS131688226
+```
+
+### ✅ Your Action:
+
+1. Click **“View in Marketplace”** beside each WS number.
+2. Wait until the status of each CMP request changes to **Completed.**
+
+   * One CMP is for creating AD groups.
+   * Another CMP is for onboarding the Vault component.
+
+Do **not** proceed until all CMPs are approved.
+
+---
+
+## **7️⃣ Step 5 – Verify Vault Setup Completion**
+
+Once CMPs complete, return to Lightspeed → **Secrets Management → Vault.**
+
+You should now see three sections:
+**Development | UAT | Production**
+
+Each will display details like this:
+
+| Environment | Vault Folder Path                        | Write Group                                         | Read Role                          |
+| ----------- | ---------------------------------------- | --------------------------------------------------- | ---------------------------------- |
+| **Dev**     | `kv2secret/data/179296/custody-data-mgr` | `app_hcv_dev_179296_custody-data-mgr_secret_write`  | `179296-custody-data-mgr-read-all` |
+| **UAT**     | `kv2secret/data/179296/custody-data-mgr` | `app_hcv_uat_179296_custody-data-mgr_secret_write`  | `179296-custody-data-mgr-read-all` |
+| **Prod**    | `kv2secret/data/179296/custody-data-mgr` | `app_hcv_prod_179296_custody-data-mgr_secret_write` | `179296-custody-data-mgr-read-all` |
+
+---
+
+## **8️⃣ Step 6 – Request Access to Write Secrets**
+
+Each Vault folder has a **Write AD Group** created by Lightspeed.
+
+To gain access:
+
+1. Click **“Request to join AD group”** under your environment’s “Write” section.
+2. This opens a **Citi Marketplace request**.
+3. Submit the request and wait for it to be approved.
+
+Once approved, you (or your FID) can add secrets to Vault.
+
+---
+
+## **9️⃣ Step 7 – Authorize ECS Clusters or Service Accounts**
+
+To allow ECS/Kubernetes workloads to read Vault secrets:
+
+1. Scroll down to **ECS Projects authorized to read secrets**.
+2. Click **Authorize** beside your cluster.
+3. Confirm the details in the pop-up:
+
+   ```
+   Namespace: icg-msst-custody-data-mgr-179296
+   Cluster: namanrgtd001d
+   Vault folder: kv2secret/data/179296/custody-data-mgr
+   ```
+4. Click **Authorize**.
+
+✅ This step binds your ECS service account with the Vault read-all role.
+
+---
+
+## **🔟 Step 8 – COIN M2M (Machine-to-Machine) Integration**
+
+Once Vault is active, Lightspeed automatically links it to **COIN** for secure M2M authentication.
+
+To verify:
+
+1. Go to your project → **Authentication tab**.
+2. Under **M2M Dev/UAT/Prod**, you’ll see:
+
+   * **COIN M2M Client ID**
+   * **Vault Secret Path**
+   * **Authorization Endpoint**
+
+Example:
+
+| Key                    | Value                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| COIN M2M Client ID     | `37dea122-cbf8-408b-921f-f2011f24cdbe`                                               |
+| Vault secret path      | `kv2secret/data/179296/custody-data-mgr/lightspeed/custody-data-utility/coin-secret` |
+| Authorization endpoint | `https://coin-dev.ls.dyn.nsroot.net/token/...`                                       |
+
+---
+
+## **1️⃣1️⃣ Step 9 – Verify Secret Access**
+
+Once authorized:
+
+1. Use the **Vault CLI** or Lightspeed UI to confirm secret retrieval.
+2. Secrets can be referenced in your Lightspeed pipelines like this:
+
+```yaml
+env:
+  COIN_CLIENT_SECRET: {{ vault.secret "kv2secret/data/179296/custody-data-mgr" "coin-secret" }}
+```
+
+3. Trigger a pipeline run to confirm that the secret is injected securely and masked in logs.
+
+---
+
+## **1️⃣2️⃣ Step 10 – Validation Checklist**
+
+| Validation Point                           | Expected Result         |
+| ------------------------------------------ | ----------------------- |
+| Vault tab visible under Secrets Management | ✅ Yes                   |
+| “Enable Vault” clicked successfully        | ✅ CMPs created          |
+| CMP requests completed                     | ✅ All approved          |
+| Vault folders (Dev/UAT/Prod) visible       | ✅ Created               |
+| Write and read AD groups created           | ✅ Yes                   |
+| ECS service authorized                     | ✅ Read access confirmed |
+| COIN Client ID and Vault path visible      | ✅ Configured            |
+
+---
+
+## **1️⃣3️⃣ Step 11 – Maintenance & Governance**
+
+* Always use **FID accounts** for Vault write access.
+* Rotate secrets regularly.
+* Use **CMP** for auditing any changes.
+* Revoke access promptly when team members move projects.
+* Store secrets under appropriate environment folders (`dev`, `uat`, `prod`).
+
+---
+
+## ✅ **Summary**
+
+| Task                 | Responsible            | Tool             |
+| -------------------- | ---------------------- | ---------------- |
+| Enable Vault         | Developer / Admin      | Lightspeed UI    |
+| CMP Request Approval | CMP Owner              | Citi Marketplace |
+| Write Access         | FID Account            | AD Group         |
+| Secret Management    | Vault CLI / Lightspeed | HashiCorp Vault  |
+| Integration          | Lightspeed             | COIN M2M         |
+
+---
+
+Would you like me to convert this into a **Confluence-formatted version** (with tables, collapsible sections, and checkboxes) — so you can directly paste it into your team’s documentation page?
+It’ll look exactly like Citi internal docs with collapsible “Step” panels.

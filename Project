@@ -1,29 +1,9 @@
-This process extracts, validates, enriches, and remediates KYC trade transaction data.
-It compares recent 2-year transactions from {KYC_RGN_STG.TRADE_TXN_SMRY} with past exception records to identify items that still need correction.
-Client segmentation details are added, and validated outputs are created for exception handling, remediation, and business review.
+BANK_FLOW_ENTITY determines how to process a bank client for KYC using ownership hierarchy, client category, and KYC record availability. If the client has an active KYC record, it proceeds directly. Otherwise, the system tries to derive KYC from majority-owned parents. Exceptions are created when KYC is missing, inactive, or when the entity is listed in the GFCID Exception Table. Work items are generated to address incomplete or inconsistent data.
 
-The data flow includes multiple components working in sequence — PBKS, Ref, EXCP, STG, and Fuse — to ensure data quality, audit readiness, and remediation processing.
 
-Extraction: Retrieves trade data and filters to 2-year transactions needing remediation.
 
-Partition & Sort: PBKS partitions data by ID, batch_date, country, month, and year for grouping and efficient processing.
+bank :
+he BANK_FLOW_BRANCH logic determines whether a bank client should use its own KYC record or inherit KYC from its parent. It first checks if the client is in the exception table, then validates whether the core KYC exists, is active, or is draft. If the client has parents with more than 50% ownership, it attempts to inherit KYC from the highest valid parent whose KYC is active and whose client category matches. If no valid core exists or inheritance is not possible, the system raises exception codes (C/D/G/N/R) or creates a work item. If a parent owns 50% or less, inheritance is not allowed and the client must maintain its own standalone KYC.
 
-Replication & Reformat: Creates data copies for parallel flows; reformats input with client segmentation and field mapping.
-
-Validation: Checks field count, type, and format; invalid records are redirected to reject handling.
-
-Exception Handling: Writes validated exceptions to timestamped output; rejected data sent to audit lookup.
-
-GFCID Creation: Builds Global Financial Customer ID list (GFCID) using (GFCID, CLIENT_TYPE, COUNTRY, MONTH, YEAR) keys for lookup.
-
-STG Processing: Assigns metadata (feed type, timestamps, batch ID); partitions, sorts, and rolls up data by key fields.
-
-Deduplication: Keeps only the most recent record for each key combination.
-
-Joining & Hierarchy Enrichment: Performs inner joins to merge hierarchy, segmentation, and jurisdiction data, producing consolidated GFCID lists.
-
-Remediation: Combines validated transaction and financial data; merges trade finance and service amounts with no nulls; outputs tagged as feed_type = 'REM'.
-
-STG Load: Updates or inserts remediated data into the staging table ensuring all reconciled financial records are stored accurately.
-
-Fuse & Logging: Merges data with status/error messages for final output; maintains logs, rejects, and unused record details for audit tracking.
+If the core primary client ID is in the GFCID Exception Table,
+→ the system tries to move up the parent hierarchy to find the closest parent with a valid + active core.

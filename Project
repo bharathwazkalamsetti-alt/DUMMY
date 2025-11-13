@@ -1,9 +1,54 @@
-BANK_FLOW_ENTITY determines how to process a bank client for KYC using ownership hierarchy, client category, and KYC record availability. If the client has an active KYC record, it proceeds directly. Otherwise, the system tries to derive KYC from majority-owned parents. Exceptions are created when KYC is missing, inactive, or when the entity is listed in the GFCID Exception Table. Work items are generated to address incomplete or inconsistent data.
+- name: Create application directory
+  file:
+    path: "{{ deployment_directory }}"
+    state: directory
+    owner: "{{ runtime_user }}"
+    group: "{{ runtime_group }}"
+    mode: "{{ app_directory_permission }}"
 
+- name: Download build artifacts from artifactory
+  get_url:
+    url: "{{ lightspeed_artifactory_build_artifacts_url }}/{{ artifacts_file_name }}"
+    dest: "{{ deployment_directory }}/{{ artifacts_file_name }}"
+    force: yes
+    username: "{{ lightspeed_artifactory.username }}"
+    password: "{{ lightspeed_artifactory.password }}"
+    validate_certs: no
+    mode: "0777"
+    timeout: 3600
+    force_basic_auth: yes
+  register: artifacts_result
+  until: artifacts_result.failed == False
+  retries: 3
+  delay: 5
 
+- name: Extract build artifacts
+  unarchive:
+    src: "{{ deployment_directory }}/{{ artifacts_file_name }}"
+    dest: "{{ deployment_directory }}"
+    remote_src: yes
 
-bank :
-he BANK_FLOW_BRANCH logic determines whether a bank client should use its own KYC record or inherit KYC from its parent. It first checks if the client is in the exception table, then validates whether the core KYC exists, is active, or is draft. If the client has parents with more than 50% ownership, it attempts to inherit KYC from the highest valid parent whose KYC is active and whose client category matches. If no valid core exists or inheritance is not possible, the system raises exception codes (C/D/G/N/R) or creates a work item. If a parent owns 50% or less, inheritance is not allowed and the client must maintain its own standalone KYC.
+# >>> ADD THIS BLOCK RIGHT AFTER UNARCHIVE <<<
 
-If the core primary client ID is in the GFCID Exception Table,
-→ the system tries to move up the parent hierarchy to find the closest parent with a valid + active core.
+- name: Read list of DAGs to deploy
+  slurp:
+    src: "{{ deployment_directory }}/deploy_dags.txt"
+  register: deploy_dags_content
+
+- name: Set list of DAG files
+  set_fact:
+    dag_files: "{{ deploy_dags_content['content'] | b64decode | splitlines() }}"
+
+- name: Copy selected DAG files
+  copy:
+    src: "{{ deployment_directory }}/dags/{{ item }}"
+    dest: "{{ airflow_dags_directory }}/{{ item }}"
+    owner: "{{ runtime_user }}"
+    group: "{{ runtime_group }}"
+    mode: '0644'
+  loop: "{{ dag_files }}"
+  when: item != ""
+
+# <<< END OF NEW BLOCK >>>
+
+# (rest of your existing tasks continue below if there are any)

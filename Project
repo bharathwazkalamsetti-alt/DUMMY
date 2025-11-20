@@ -1,54 +1,90 @@
-- name: Create application directory
-  file:
-    path: "{{ deployment_directory }}"
-    state: directory
-    owner: "{{ runtime_user }}"
-    group: "{{ runtime_group }}"
-    mode: "{{ app_directory_permission }}"
+{
+  "TRADE": {
 
-- name: Download build artifacts from artifactory
-  get_url:
-    url: "{{ lightspeed_artifactory_build_artifacts_url }}/{{ artifacts_file_name }}"
-    dest: "{{ deployment_directory }}/{{ artifacts_file_name }}"
-    force: yes
-    username: "{{ lightspeed_artifactory.username }}"
-    password: "{{ lightspeed_artifactory.password }}"
-    validate_certs: no
-    mode: "0777"
-    timeout: 3600
-    force_basic_auth: yes
-  register: artifacts_result
-  until: artifacts_result.failed == False
-  retries: 3
-  delay: 5
+    "SEG1": {
+      "schema": [
+        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE", "COUNTRY",
+        "MONTH", "YEAR",
+        "TRAD_SER_IMP_CNT", "TRAD_SER_IMP_AMT",
+        "TRAD_SER_EXP_CNT", "TRAD_SER_EXP_AMT",
+        "TRAD_SER_STD_LC_GUARANTEE_CNT", "TRAD_SER_STD_LC_GUARANTEE_AMT",
+        "TRAD_FIN_IMP_CNT", "TRAD_FIN_IMP_AMT",
+        "TRAD_FIN_EXP_CNT", "TRAD_FIN_EXP_AMT",
+        "TRAD_FIN_GARP_CNT", "TRAD_FIN_GARP_AMT",
+        "TRAD_FIN_SUP_CNT", "TRAD_FIN_SUP_AMT",
+        "TRAD_FIN_COMMODITIES_CNT", "TRAD_FIN_COMMODITIES_AMT",
+        "FI_TRAD_ADV_CNT", "FI_TRAD_ADV_AMT",
+        "FI_TRAD_LOC_CNT", "FI_TRAD_LOC_AMT",
+        "FI_STD_LOC_CNT", "FI_STD_LOC_AMT",
+        "FI_REIM_AUTH_CNT", "FI_REIM_AUTH_AMT",
+        "WORK_ITEM_REQ", "LOAD_STATUS", "FEED_TYPE",
+        "CREATE_ID", "CREATE_DT",
+        "LST_UPD_ID", "LST_UPD_DT",
+        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
+        "KYC_SHARD_NUM", "LST_UPD_TIME",
+        "CDL_PYMT_INST_SERVC_REQ_CNT", "CDL_PYMT_INST_SERVC_REQ_AMT",
+        "CDL_PYMT_INST_SERVC_PROV_CNT", "CDL_PYMT_INST_SERVC_PROV_AMT",
+        "CDL_PYMT_INST_GOODS_SALES_CNT", "CDL_PYMT_INST_GOODS_SALES_AMT",
+        "CDL_PYMT_INST_GOODS_PURCH_CNT", "CDL_PYMT_INST_GOODS_PURCH_AMT"
+      ],
+      "mapping": "same_as_source",
+      "dedup_keys": ["ID"],
+      "target_table": "TRADE_TXN_SMRY"
+    },
 
-- name: Extract build artifacts
-  unarchive:
-    src: "{{ deployment_directory }}/{{ artifacts_file_name }}"
-    dest: "{{ deployment_directory }}"
-    remote_src: yes
+    "SEG2": {
+      "schema": [
+        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE",
+        "COUNTRY", "MONTH", "YEAR", "JURIS_COUNTRY",
+        "TRAD_SER_IMP_AMT", "TRAD_SER_EXP_AMT",
+        "TRAD_SER_STD_LC_GUARANTEE_AMT",
+        "TRAD_FIN_GARP_AMT", "TRAD_FIN_SUP_AMT",
+        "LOAD_STATUS", "FEED_TYPE", "CREATE_ID", "CREATE_DT",
+        "LST_UPD_ID", "LST_UPD_DT",
+        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
+        "KYC_SHARD_NUM", "LST_UPD_TIME",
+        "CDL_PYMT_INST_SERVC_REQ_AMT",
+        "CDL_PYMT_INST_SERVC_PROV_AMT",
+        "CDL_PYMT_INST_GOODS_SALES_AMT",
+        "CDL_PYMT_INST_GOODS_PURCH_AMT"
+      ],
+      "mapping": "same_as_source",
+      "dedup_keys": ["ID"],
+      "target_table": "TRADE_TXN_SMRY_JURIS"
+    },
 
-# >>> ADD THIS BLOCK RIGHT AFTER UNARCHIVE <<<
+    "SEG3": {
+      "schema": [
+        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE",
+        "COUNTRY", "MONTH", "YEAR", "COMMODITY_CODE",
+        "TRAD_SER_IMP_AMT", "TRAD_SER_EXP_AMT",
+        "LOAD_STATUS", "FEED_TYPE", "CREATE_ID", "CREATE_DT",
+        "LST_UPD_ID", "LST_UPD_DT",
+        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
+        "KYC_SHARD_NUM", "LST_UPD_TIME",
+        "CDL_PYMT_INST_GOODS_SALES_AMT",
+        "CDL_PYMT_INST_GOODS_PURCH_AMT"
+      ],
+      "mapping": "same_as_source",
+      "dedup_keys": ["ID"],
+      "target_table": "TRADE_TXN_COMMODITY_SMRY"
+    },
 
-- name: Read list of DAGs to deploy
-  slurp:
-    src: "{{ deployment_directory }}/deploy_dags.txt"
-  register: deploy_dags_content
-
-- name: Set list of DAG files
-  set_fact:
-    dag_files: "{{ deploy_dags_content['content'] | b64decode | splitlines() }}"
-
-- name: Copy selected DAG files
-  copy:
-    src: "{{ deployment_directory }}/dags/{{ item }}"
-    dest: "{{ airflow_dags_directory }}/{{ item }}"
-    owner: "{{ runtime_user }}"
-    group: "{{ runtime_group }}"
-    mode: '0644'
-  loop: "{{ dag_files }}"
-  when: item != ""
-
-# <<< END OF NEW BLOCK >>>
-
-# (rest of your existing tasks continue below if there are any)
+    "SEG4": {
+      "schema": [
+        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE",
+        "COUNTRY", "MONTH", "YEAR", "ACTVTY_JURIS",
+        "TRAD_FIN_COMMODITIES_AMT",
+        "FI_LOC_JURIS_AMT",
+        "FI_STD_LC_GUARANTEE_AMT",
+        "LOAD_STATUS", "FEED_TYPE", "CREATE_ID", "CREATE_DT",
+        "LST_UPD_ID", "LST_UPD_DT",
+        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
+        "KYC_SHARD_NUM", "LST_UPD_TIME"
+      ],
+      "mapping": "same_as_source",
+      "dedup_keys": ["ID"],
+      "target_table": "TRADE_TXN_LC_SMRY_JURIS"
+    }
+  }
+}

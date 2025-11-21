@@ -1,155 +1,42 @@
-# ===================== IMPORTS =====================
-import sys
-import uuid
-import json
-from datetime import datetime
-from pathlib import Path
+# Step 11: Delete existing data for this target table
+print(f"Deleting existing data from target table: {target_table}")
+delete_target_table(spark, target_table, source_system)
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import (
-    current_timestamp, lit, to_date, row_number, col, expr
-)
-from pyspark.sql.window import Window
 
-# Shared imports (same style as your teammate)
-from configs.config_file import (
-    fetch_config_params, delete_target_table, write_to_oracle,
-    get_table_count
-)
-from configs.audit_file import (
-    insert_audit_log, update_audit_log
-)
-from configs.oracle_connection import ora_src_conn_init
-from configs.hdfs_file_operations import copy_file_nas_to_hdfs
+# Step 12: Write to target table
+print(f"Writing to target table: {target_table}")
+final_df.write.mode("append").saveAsTable(target_table)
 
-# ===================== CONFIG / STEP 1 =====================
-def run_trade_job(env, job_id, source_file):
-    print("Starting TRADE Job")
 
-    CONFIG_FILE = Path("product_domain/trades/config/ingestion_config.json")
-    config = fetch_config_params(CONFIG_FILE)
-    trade_config = config["sources"]["TRADE_SOURCE"]
+# Step 13: Target Count
+target_count = get_table_count(spark, target_table, source_system)
+print(f"Target Count for {target_table}: {target_count}")
 
-    field_separator = trade_config["field_separator"]
-    source_system = trade_config["source_name"]
-    segments = trade_config["segments"]
 
-    print("Config Loaded Successfully")
+# Step 16: Audit Success for this segment
+update_audit_log(spark, audit_id, "SUCCESS", source_count, target_count)
+print(f"Audit updated successfully for {segment_key}")
 
-    # ===================== STEP 2: COPY FILE TO HDFS =====================
-    print("Copying file from NAS to HDFS...")
-    file_source_path = source_file
-    hdfs_file_load_path = trade_config["hdfs_path"]
 
-    actual_file_name, file_last_modified_time = copy_file_nas_to_hdfs(
-        spark, file_source_path, hdfs_file_load_path
-    )
+# Step 17: Archive File after all segments processed
+archive_file_from_hdfs(spark, hdfs_file_load_path, actual_file_name, file_archive_path)
+print(f"File archived to: {file_archive_path}")
 
-    print(f"Copied File: {actual_file_name}")
-    print(f"Last Modified: {file_last_modified_time}")
 
-    # ===================== STEP 3: BUILD HDFS PATH =====================
-    file_name = actual_file_name
-    hdfs_file_path = f"{hdfs_file_load_path}/{file_name}*"
-    print(f"Reading from HDFS path: {hdfs_file_path}")
+# Optional HDFS cleanup
+print(f"Cleaning HDFS path: {hdfs_file_load_path}")
+fs = spark._jvm.org.apache.hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
+fs.delete(spark._jvm.org.apache.hadoop.fs.Path(hdfs_file_load_path), True)
 
-    # ===================== STEP 4: READ RAW TEXT FILE =====================
-    raw = spark.read.text(hdfs_file_path)
-    lines = raw.collect()
 
-    header = lines[0].value
-    footer = lines[-1].value
-    data_lines = [row.value for row in lines[1:-1]]
+print("Trade ingestion job completed successfully.")
 
-    print(f"Header: {header}")
-    print(f"Footer: {footer}")
 
-    footer_parts = footer.split(field_separator)
-    footer_count = int(footer_parts[1])
-    print(f"Footer Count: {footer_count}")
-
-    # Group rows by SEGMENT #
-    segment_rows = {}
-    for line in data_lines:
-        seg = line.split(field_separator)[0]
-        segment_rows.setdefault(seg, []).append(line)
-
-    print(f"Segments Found: {list(segment_rows.keys())}")
-
-    # Process all segments
-    for seg_num, seg_cfg in segments.items():
-        print(f"\n==============================")
-        print(f"Processing SEGMENT {seg_num}")
-        print("==============================")
-
-        seg_rows = segment_rows.get(seg_num, [])
-        schema = seg_cfg["schema"]
-        mapping = seg_cfg["mapping"]
-        dedup_keys = seg_cfg["dedup_keys"]
-        target_table = seg_cfg["target_table"]
-
-        print(f"Schema: {len(schema)} columns")
-        print(f"Target Table: {target_table}")
-
-        # ===================== STEP 5: SPLIT LINES =====================
-        df_raw = spark.createDataFrame(
-            [row.split(field_separator) for row in seg_rows]
-        )
-        print("Raw Segment Data:")
-        df_raw.show(5)
-
-        # ===================== STEP 6: APPLY SCHEMA =====================
-        for idx, col_name in enumerate(schema):
-            df_raw = df_raw.withColumnRenamed(f"{df_raw.columns[idx]}", col_name)
-
-        print("After Applying Schema:")
-        df_raw.show(5)
-
-        # ===================== STEP 7: APPLY MAPPING =====================
-        print("Applying Mapping...")
-
-        df_mapped = df_raw.select(
-            *[
-                col(src).alias(tgt)
-                for src, tgt in mapping.items()
-                if src in df_raw.columns
-            ],
-            *[c for c in df_raw.columns if c not in mapping]
-        )
-
-        print("After Mapping:")
-        df_mapped.show(5)
-
-        # ===================== STEP 8: DEDUPLICATION =====================
-        print("Deduplicating Data...")
-
-        win = Window.partitionBy(*dedup_keys).orderBy(col("BATCH_DT").desc())
-
-        df_rn = df_mapped.withColumn("rn", row_number().over(win))
-        unique_df = df_rn.filter(col("rn") == 1).drop("rn")
-        dup_df = df_rn.filter(col("rn") > 1).drop("rn")
-
-        print(f"Unique rows: {unique_df.count()}")
-        print(f"Duplicate rows: {dup_df.count()}")
-
-        # ===================== STEP 9: HANDLE DUPLICATES =====================
-        if dup_df.count() > 0:
-            print("Duplicates Found — Will be stored in REJECT table")
-        else:
-            print("No duplicates found.")
-
-        # ===================== STEP 10: ADD EXTRA COLUMNS =====================
-        print("Adding Metadata Columns...")
-
-        load_uuid = str(uuid.uuid4())
-        final_df = (
-            unique_df
-            .withColumn("BATCH_ID", lit(load_uuid))
-            .withColumn("SOURCE_NAME", lit(source_system))
-            .withColumn("CREATE_ID", lit("PYSPARK"))
-            .withColumn("CREATE_DT", current_timestamp())
-        )
-
-        print("Final DF Schema:")
-        final_df.printSchema()
-
+except Exception as e:
+print(f"Error occurred: {str(e)}")
+if audit_id:
+update_audit_log(spark, audit_id, "FAILED", 0, 0)
+try:
+archive_file_from_hdfs(spark, hdfs_file_load_path, file_name, file_load_failed)
+except:
+pass

@@ -1,90 +1,40 @@
-{
-  "TRADE": {
+# ------------------------------------------------------------
+# 4. Read file from HDFS into DataFrame (Same format as teammate)
+# ------------------------------------------------------------
 
-    "SEG1": {
-      "schema": [
-        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE", "COUNTRY",
-        "MONTH", "YEAR",
-        "TRAD_SER_IMP_CNT", "TRAD_SER_IMP_AMT",
-        "TRAD_SER_EXP_CNT", "TRAD_SER_EXP_AMT",
-        "TRAD_SER_STD_LC_GUARANTEE_CNT", "TRAD_SER_STD_LC_GUARANTEE_AMT",
-        "TRAD_FIN_IMP_CNT", "TRAD_FIN_IMP_AMT",
-        "TRAD_FIN_EXP_CNT", "TRAD_FIN_EXP_AMT",
-        "TRAD_FIN_GARP_CNT", "TRAD_FIN_GARP_AMT",
-        "TRAD_FIN_SUP_CNT", "TRAD_FIN_SUP_AMT",
-        "TRAD_FIN_COMMODITIES_CNT", "TRAD_FIN_COMMODITIES_AMT",
-        "FI_TRAD_ADV_CNT", "FI_TRAD_ADV_AMT",
-        "FI_TRAD_LOC_CNT", "FI_TRAD_LOC_AMT",
-        "FI_STD_LOC_CNT", "FI_STD_LOC_AMT",
-        "FI_REIM_AUTH_CNT", "FI_REIM_AUTH_AMT",
-        "WORK_ITEM_REQ", "LOAD_STATUS", "FEED_TYPE",
-        "CREATE_ID", "CREATE_DT",
-        "LST_UPD_ID", "LST_UPD_DT",
-        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
-        "KYC_SHARD_NUM", "LST_UPD_TIME",
-        "CDL_PYMT_INST_SERVC_REQ_CNT", "CDL_PYMT_INST_SERVC_REQ_AMT",
-        "CDL_PYMT_INST_SERVC_PROV_CNT", "CDL_PYMT_INST_SERVC_PROV_AMT",
-        "CDL_PYMT_INST_GOODS_SALES_CNT", "CDL_PYMT_INST_GOODS_SALES_AMT",
-        "CDL_PYMT_INST_GOODS_PURCH_CNT", "CDL_PYMT_INST_GOODS_PURCH_AMT"
-      ],
-      "mapping": "same_as_source",
-      "dedup_keys": ["ID"],
-      "target_table": "TRADE_TXN_SMRY"
-    },
+hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
+raw = spark.read.text(hdfs_path)
 
-    "SEG2": {
-      "schema": [
-        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE",
-        "COUNTRY", "MONTH", "YEAR", "JURIS_COUNTRY",
-        "TRAD_SER_IMP_AMT", "TRAD_SER_EXP_AMT",
-        "TRAD_SER_STD_LC_GUARANTEE_AMT",
-        "TRAD_FIN_GARP_AMT", "TRAD_FIN_SUP_AMT",
-        "LOAD_STATUS", "FEED_TYPE", "CREATE_ID", "CREATE_DT",
-        "LST_UPD_ID", "LST_UPD_DT",
-        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
-        "KYC_SHARD_NUM", "LST_UPD_TIME",
-        "CDL_PYMT_INST_SERVC_REQ_AMT",
-        "CDL_PYMT_INST_SERVC_PROV_AMT",
-        "CDL_PYMT_INST_GOODS_SALES_AMT",
-        "CDL_PYMT_INST_GOODS_PURCH_AMT"
-      ],
-      "mapping": "same_as_source",
-      "dedup_keys": ["ID"],
-      "target_table": "TRADE_TXN_SMRY_JURIS"
-    },
+# Collect lines (header + body + footer)
+lines = raw.collect()
 
-    "SEG3": {
-      "schema": [
-        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE",
-        "COUNTRY", "MONTH", "YEAR", "COMMODITY_CODE",
-        "TRAD_SER_IMP_AMT", "TRAD_SER_EXP_AMT",
-        "LOAD_STATUS", "FEED_TYPE", "CREATE_ID", "CREATE_DT",
-        "LST_UPD_ID", "LST_UPD_DT",
-        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
-        "KYC_SHARD_NUM", "LST_UPD_TIME",
-        "CDL_PYMT_INST_GOODS_SALES_AMT",
-        "CDL_PYMT_INST_GOODS_PURCH_AMT"
-      ],
-      "mapping": "same_as_source",
-      "dedup_keys": ["ID"],
-      "target_table": "TRADE_TXN_COMMODITY_SMRY"
-    },
+# Header is always first line
+header = lines[0].value
 
-    "SEG4": {
-      "schema": [
-        "SEG_IND", "BATCH_DT", "ID", "ID_TYPE", "CLIENT_TYPE",
-        "COUNTRY", "MONTH", "YEAR", "ACTVTY_JURIS",
-        "TRAD_FIN_COMMODITIES_AMT",
-        "FI_LOC_JURIS_AMT",
-        "FI_STD_LC_GUARANTEE_AMT",
-        "LOAD_STATUS", "FEED_TYPE", "CREATE_ID", "CREATE_DT",
-        "LST_UPD_ID", "LST_UPD_DT",
-        "ACT_STRT_DT", "ACT_END_DT", "VER_NUM",
-        "KYC_SHARD_NUM", "LST_UPD_TIME"
-      ],
-      "mapping": "same_as_source",
-      "dedup_keys": ["ID"],
-      "target_table": "TRADE_TXN_LC_SMRY_JURIS"
-    }
-  }
-}
+# Footer is always last line
+footer = lines[-1].value
+
+# Everything between header and footer are data rows
+data_lines = lines[1:-1]
+
+print(f"Header: {header}")
+print(f"Footer: {footer}")
+
+# -----------------------------
+# Parse footer to get row count
+# -----------------------------
+footer_parts = footer.split(field_separator)
+footer_count = int(footer_parts[1])
+print(f"Footer Count: {footer_count}")
+
+# -----------------------------
+# Convert raw rows into DataFrame
+# -----------------------------
+df_raw = spark.createDataFrame(
+    [row.value.split(field_separator) for row in data_lines],
+    schema=None
+)
+
+# Count number of raw rows
+source_count = df_raw.count()
+print(f"Source Count: {source_count}")

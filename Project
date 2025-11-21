@@ -1,14 +1,83 @@
 # ------------------------------------------------------------
-# 6. Apply schema to DataFrame
+# 7. Apply Mapping
 # ------------------------------------------------------------
 
-print("Applying schema to DataFrame")
-print("Before applying schema")
-df_raw.show(5)
+print("Applying Mapping")
 
-# Rename _1, _2, _3... to actual column names from schema
-for i, col_name in enumerate(schema):
-    df_raw = df_raw.withColumnRenamed(f"_{i+1}", col_name)
+# Case 1: mapping = "same_as_source"
+if mapping == "same_as_source":
+    print("Mapping type: same_as_source → No mapping applied.")
+    valid_mapping = {}
+    df_mapped = unique_df
 
-print("After applying schema")
-df_raw.show(5)
+# Case 2: mapping is a real dictionary
+else:
+    # Build mapping only for columns that exist in unique_df
+    valid_mapping = {src: tgt for src, tgt in mapping.items() if src in unique_df.columns}
+
+    print(f"Mapping: {mapping}")
+    print(f"Valid Mapping: {valid_mapping}")
+
+    # Apply mapping via selectExpr
+    df_mapped = unique_df.selectExpr(
+        *[f"{src} as {tgt}" for src, tgt in valid_mapping.items()] +
+        [col for col in schema if col not in valid_mapping]
+    )
+
+print("After applying mapping")
+df_mapped.show(5)
+
+
+
+# ------------------------------------------------------------
+# 8. Deduplicate Data
+# ------------------------------------------------------------
+
+print("In Duplicate Data section")
+
+# dedup_keys comes from ingestion_config.json (example: ["ID"])
+print(f"Dedup Keys: {dedup_keys}")
+
+# Window function: group by dedup keys, order by latest BATCH_DT
+dedup_window = Window.partitionBy(*dedup_keys).orderBy(col("BATCH_DT").desc())
+
+# Add row number to identify duplicates
+df_with_rn = df_mapped.withColumn("rn", row_number().over(dedup_window))
+
+# Keep only first occurrence (latest BATCH_DT)
+unique_df = df_with_rn.filter(col("rn") == 1).drop("rn")
+
+# Rows with rn > 1 are duplicates
+dup_df = df_with_rn.filter(col("rn") > 1).drop("rn")
+
+print(f"Unique rows after deduplication: {unique_df.count()}")
+print(f"Duplicate rows found: {dup_df.count()}")
+
+
+# ------------------------------------------------------------
+# 9. Load duplicates - Placeholder
+# ------------------------------------------------------------
+
+if dup_df.count() > 0:
+    print("Can we load this to a separate table for duplicates?")
+
+
+
+# ------------------------------------------------------------
+# 10. Add required audit columns for TRADE tables
+# ------------------------------------------------------------
+
+print("Adding Extra Columns for Trade job")
+
+# Generate batch uuid for this load
+load_uuid = str(uuid.uuid4())
+
+final_df = (
+    df_mapped
+        .withColumn("BATCH_ID", lit(load_uuid))
+        .withColumn("CREATE_ID", lit("PYSPARK"))
+        .withColumn("CREATE_DT", current_timestamp())
+)
+
+# Show schema after adding columns
+final_df.printSchema()

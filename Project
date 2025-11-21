@@ -1,34 +1,14 @@
 # ------------------------------------------------------------
-# 5. Load JSON schema/mapping for this source (TRADE ingestion)
+# 6. Apply schema to DataFrame
 # ------------------------------------------------------------
 
-with open(JSON_CONFIG_FILE) as f:
-    ingestion_json = json.load(f)
+print("Applying schema to DataFrame")
+print("Before applying schema")
+df_raw.show(5)
 
-file_config = ingestion_json["sources"][file_name]
+# Rename _1, _2, _3... to actual column names from schema
+for i, col_name in enumerate(schema):
+    df_raw = df_raw.withColumnRenamed(f"_{i+1}", col_name)
 
-segment_value = header.split(field_separator)[0]
-
-if segment_value == "0001":
-    segment_key = "SEG1"
-elif segment_value == "0002":
-    segment_key = "SEG2"
-elif segment_value == "0003":
-    segment_key = "SEG3"
-elif segment_value == "0004":
-    segment_key = "SEG4"
-else:
-    raise Exception(f"Unknown segment code: {segment_value}")
-
-print(f"Segment detected: {segment_key}")
-
-segment_config = file_config[segment_key]
-
-schema = segment_config["schema"]
-mapping = segment_config["mapping"]
-dedup_keys = segment_config["dedup_keys"]
-target_table = segment_config["target_table"]
-
-print(f"Schema Columns: {schema}")
-print(f"Mapping: {mapping}")
-print(f"Dedup Keys: {dedup_keys}")
+print("After applying schema")
+df_raw.show(5)

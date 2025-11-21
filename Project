@@ -1,40 +1,34 @@
 # ------------------------------------------------------------
-# 4. Read file from HDFS into DataFrame (Same format as teammate)
+# 5. Load JSON schema/mapping for this source (TRADE ingestion)
 # ------------------------------------------------------------
 
-hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
-raw = spark.read.text(hdfs_path)
+with open(JSON_CONFIG_FILE) as f:
+    ingestion_json = json.load(f)
 
-# Collect lines (header + body + footer)
-lines = raw.collect()
+file_config = ingestion_json["sources"][file_name]
 
-# Header is always first line
-header = lines[0].value
+segment_value = header.split(field_separator)[0]
 
-# Footer is always last line
-footer = lines[-1].value
+if segment_value == "0001":
+    segment_key = "SEG1"
+elif segment_value == "0002":
+    segment_key = "SEG2"
+elif segment_value == "0003":
+    segment_key = "SEG3"
+elif segment_value == "0004":
+    segment_key = "SEG4"
+else:
+    raise Exception(f"Unknown segment code: {segment_value}")
 
-# Everything between header and footer are data rows
-data_lines = lines[1:-1]
+print(f"Segment detected: {segment_key}")
 
-print(f"Header: {header}")
-print(f"Footer: {footer}")
+segment_config = file_config[segment_key]
 
-# -----------------------------
-# Parse footer to get row count
-# -----------------------------
-footer_parts = footer.split(field_separator)
-footer_count = int(footer_parts[1])
-print(f"Footer Count: {footer_count}")
+schema = segment_config["schema"]
+mapping = segment_config["mapping"]
+dedup_keys = segment_config["dedup_keys"]
+target_table = segment_config["target_table"]
 
-# -----------------------------
-# Convert raw rows into DataFrame
-# -----------------------------
-df_raw = spark.createDataFrame(
-    [row.value.split(field_separator) for row in data_lines],
-    schema=None
-)
-
-# Count number of raw rows
-source_count = df_raw.count()
-print(f"Source Count: {source_count}")
+print(f"Schema Columns: {schema}")
+print(f"Mapping: {mapping}")
+print(f"Dedup Keys: {dedup_keys}")

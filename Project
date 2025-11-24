@@ -1,42 +1,76 @@
-# Step 11: Delete existing data for this target table
-print(f"Deleting existing data from target table: {target_table}")
-delete_target_table(spark, target_table, source_system)
+# -------------------------------
+# Read file from HDFS
+# -------------------------------
 
+hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
+raw = spark.read.text(hdfs_path)
 
-# Step 12: Write to target table
-print(f"Writing to target table: {target_table}")
-final_df.write.mode("append").saveAsTable(target_table)
+lines = raw.collect()
 
+header = lines[0].value
+footer = lines[-1].value
+data_lines = lines[1:-1]
 
-# Step 13: Target Count
-target_count = get_table_count(spark, target_table, source_system)
-print(f"Target Count for {target_table}: {target_count}")
+print(f"Header: {header}")
+print(f"Footer: {footer}")
 
+# -------------------------------
+# Parse header/footer info
+# -------------------------------
 
-# Step 16: Audit Success for this segment
-update_audit_log(spark, audit_id, "SUCCESS", source_count, target_count)
-print(f"Audit updated successfully for {segment_key}")
+header_parts = header.split(field_separator)
+header_filedate = header_parts[2][:8]
+print(f"Header File Date: {header_filedate}")
 
+footer_parts = footer.split(field_separator)
+footer_count = int(footer_parts[1])
+footer_chksum = int(footer_parts[2])
 
-# Step 17: Archive File after all segments processed
-archive_file_from_hdfs(spark, hdfs_file_load_path, actual_file_name, file_archive_path)
-print(f"File archived to: {file_archive_path}")
+print(f"Footer Count: {footer_count}")
+print(f"Footer Checksum: {footer_chksum}")
 
+# -------------------------------
+# Convert data rows to DataFrame with fixed column count
+# -------------------------------
 
-# Optional HDFS cleanup
-print(f"Cleaning HDFS path: {hdfs_file_load_path}")
-fs = spark._jvm.org.apache.hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
-fs.delete(spark._jvm.org.apache.hadoop.fs.Path(hdfs_file_load_path), True)
+expected_cols = 38   # ✅ hardcoded column count
 
+parsed_rows = []
 
-print("Trade ingestion job completed successfully.")
+for row in data_lines:
+    parts = row.value.split(field_separator)
 
+    # Pad missing columns with NULL
+    if len(parts) < expected_cols:
+        parts = parts + [None] * (expected_cols - len(parts))
 
-except Exception as e:
-print(f"Error occurred: {str(e)}")
-if audit_id:
-update_audit_log(spark, audit_id, "FAILED", 0, 0)
-try:
-archive_file_from_hdfs(spark, hdfs_file_load_path, file_name, file_load_failed)
-except:
-pass
+    # Trim extra columns if any
+    elif len(parts) > expected_cols:
+        parts = parts[:expected_cols]
+
+    parsed_rows.append(parts)
+
+# Create DataFrame
+df_raw = spark.createDataFrame(parsed_rows)
+
+print(f"Source Count: {df_raw.count()}")
+df_raw.show(5)
+
+# -------------------------------
+# Compute checksum
+# -------------------------------
+
+from pyspark.sql.functions import sha2, concat_ws
+
+checksum_df = df_raw.withColumn(
+    "checksum",
+    sha2(concat_ws("|", *df_raw.columns), 256)
+)
+
+checksum_df.show(5)
+
+final_checksum = checksum_df.selectExpr(
+    "sha2(concat_ws('|', collect_list(checksum)), 256) as final_checksum"
+).collect()[0]["final_checksum"]
+
+print(f"Computed Checksum: {final_checksum}")

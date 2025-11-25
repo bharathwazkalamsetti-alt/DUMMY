@@ -1,24 +1,54 @@
-# ----------------------------- 5. File validation -----------------------------
+with open(JSON_CONFIG_FILE) as f:
+    ingestion_json = json.load(f)
 
-file_date_match = (file_date == header_filedate)
-print(f"File Date Validation Match | File Date: {file_date} | Header Filedate:{header_filedate} | File Date Match: {file_date_match}")
+# ---------------------------------------------------
+# 1. Detect the correct top-level JSON key
+# ---------------------------------------------------
+# Example: ICG_REM_TXN_SMRY_GIW_TRD_CITIKYC_GLOBAL
+top_level_key = list(ingestion_json.keys())[0]
 
-row_count_match = (source_count == footer_count)
-print(f"Row Count Validation Match | Source Count: {source_count} | Footer Count: {footer_count} | Row Count Match: {row_count_match}")
+file_config = ingestion_json[top_level_key]
 
-# checksum removed because not used now
-# checksum_match = (final_checksum == footer_chksum)
-# print(f"Checksum Validation Match | Computed Checksum: {final_checksum} | Footer Checksum: {footer_chksum} | Checksum Match: {checksum_match}")
+# ---------------------------------------------------
+# 2. Get segment value (skip header if needed)
+# ---------------------------------------------------
+first_col = header.split(field_separator)[0]
 
-audit_status = "PASSED" if (file_date_match and row_count_match) else "FAILED"
+# If we hit the header, read the next row from file
+if first_col.upper() == "HEAD":
+    # Read the next line from your input file
+    data_line = file.readline()
+    segment_value = data_line.split(field_separator)[0]
+else:
+    segment_value = first_col
 
-update_audit_log(spark,audit_id,audit_status,"File validation completed",int(source_count),start_time)
+# ---------------------------------------------------
+# 3. Map segment code to SEG key
+# ---------------------------------------------------
+segment_mapping = {
+    "0001": "SEG1",
+    "0002": "SEG2",
+    "0003": "SEG3",
+    "0004": "SEG4"
+}
 
-print(f"Audit Log Updated with Status: {audit_status}")
+if segment_value not in segment_mapping:
+    raise Exception(f"Unknown segment code: {segment_value}")
 
-if not (file_date_match and row_count_match):
-    print("File validation failed. Exiting process.")
-    update_audit_log(spark, audit_id, "FAILED", "File validation failed", int(source_count), start_time)
-    return
+segment_key = segment_mapping[segment_value]
 
-print("File validation passed. Continuing with the process.")
+print(f"Segment detected: {segment_key}")
+
+# ---------------------------------------------------
+# 4. Load SEG config from JSON
+# ---------------------------------------------------
+segment_config = file_config[segment_key]
+
+schema = segment_config["schema"]
+mapping = segment_config["mapping"]
+dedup_keys = segment_config["dedup_keys"]
+target_table = segment_config["target_table"]
+
+print(f"Schema Columns: {schema}")
+print(f"Mapping: {mapping}")
+print(f"Dedup Keys: {dedup_keys}")

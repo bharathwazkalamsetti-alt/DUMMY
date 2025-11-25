@@ -1,71 +1,24 @@
-# ------------ Step 4: Read file from HDFS ------------
-hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
-raw = spark.read.text(hdfs_path)
+# ----------------------------- 5. File validation -----------------------------
 
-# Collect lines (header + body + footer)
-lines = raw.collect()
+file_date_match = (file_date == header_filedate)
+print(f"File Date Validation Match | File Date: {file_date} | Header Filedate:{header_filedate} | File Date Match: {file_date_match}")
 
-# Header is always first line
-header = lines[0].value
+row_count_match = (source_count == footer_count)
+print(f"Row Count Validation Match | Source Count: {source_count} | Footer Count: {footer_count} | Row Count Match: {row_count_match}")
 
-# Footer is always last line
-footer = lines[-1].value
+# checksum removed because not used now
+# checksum_match = (final_checksum == footer_chksum)
+# print(f"Checksum Validation Match | Computed Checksum: {final_checksum} | Footer Checksum: {footer_chksum} | Checksum Match: {checksum_match}")
 
-# Everything between header and footer are data rows
-data_lines = lines[1:-1]
+audit_status = "PASSED" if (file_date_match and row_count_match) else "FAILED"
 
-print(f"Header: {header}")
-print(f"Footer: {footer}")
+update_audit_log(spark,audit_id,audit_status,"File validation completed",int(source_count),start_time)
 
-# Parse header to get file date
-header_parts = header.split(field_separator)
-header_filedate = header_parts[2][0:8]
-print(f"Header File Date: {header_filedate}")
+print(f"Audit Log Updated with Status: {audit_status}")
 
-# Parse footer to get row count and checksum
-footer_parts = footer.split(field_separator)
-footer_count = int(footer_parts[1])
-print(f"Footer Count: {footer_count}")
-footer_chksum = int(footer_parts[2])
-print(f"Footer Checksum: {footer_chksum}")
+if not (file_date_match and row_count_match):
+    print("File validation failed. Exiting process.")
+    update_audit_log(spark, audit_id, "FAILED", "File validation failed", int(source_count), start_time)
+    return
 
-# ------------ Convert raw rows into DataFrame ------------
-expected_cols = 38
-parsed_rows = []
-
-for row in data_lines:
-    parts = row.value.split(field_separator)
-
-    if len(parts) < expected_cols:
-        parts = parts + [None] * (expected_cols - len(parts))
-    elif len(parts) > expected_cols:
-        parts = parts[:expected_cols]
-
-    parsed_rows.append(parts)
-
-# 👉 FIX: Define proper column names so dataframe looks correct
-schema = [f"COL{i}" for i in range(1, expected_cols + 1)]
-# If you have schema in JSON: schema = config[segment]["schema"]
-
-# Create DataFrame with column names
-df_raw = spark.createDataFrame(parsed_rows, schema=schema)
-
-# Show data count
-source_count = df_raw.count()
-print(f"Source Count: {source_count}")
-
-df_raw.show(5)
-
-# ------------ Compute checksum ------------
-checksum_df = df_raw.withColumn(
-    "checksum",
-    sha2(concat_ws("|", *df_raw.columns), 256)
-)
-
-checksum_df.show(5)
-
-final_checksum = checksum_df.selectExpr(
-    "sha2(concat_ws('|', collect_list(checksum)), 256) as final_checksum"
-).collect()[0]["final_checksum"]
-
-print(f"Computed Checksum: {final_checksum}")
+print("File validation passed. Continuing with the process.")

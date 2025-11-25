@@ -1,43 +1,28 @@
-# input_file_path = "hdfs:///your/hdfs/path/to/file.txt"
+# set expected_cols = 38, or max schema length from your JSON if you prefer
+        expected_cols = 38
+        parsed_rows = []
+        for line in data_lines:
+            parts = line.split(field_separator)
+            parts = [p if p != "" else None for p in parts]  # blanks -> null
+            if len(parts) < expected_cols:
+                parts += [None] * (expected_cols - len(parts))
+            elif len(parts) > expected_cols:
+                parts = parts[:expected_cols]
+            parsed_rows.append(parts)
 
-# Read first two lines using Spark
-rdd = spark.sparkContext.textFile(input_file_path)
-first_two = rdd.take(2)
+        df_raw = spark.createDataFrame(parsed_rows)
+        source_count = df_raw.count()
 
-header = first_two[0]
-next_line = first_two[1]
+        print(f"Header File Date: {header_filedate}")
+        print(f"Footer Count: {footer_count}")
+        print(f"Footer Checksum: {footer_chksum}")
+        print(f"Source Count: {source_count}")
+        df_raw.show(5, truncate=False)
 
-# Get segment value
-first_col = header.split(field_separator)[0]
+        # continue with validation and Step 6...
 
-if first_col.upper() == "HEAD":
-    segment_value = next_line.split(field_separator)[0]
-else:
-    segment_value = first_col
-
-# Map to SEG keys
-segment_mapping = {
-    "0001": "SEG1",
-    "0002": "SEG2",
-    "0003": "SEG3",
-    "0004": "SEG4"
-}
-
-if segment_value not in segment_mapping:
-    raise Exception(f"Unknown segment code: {segment_value}")
-
-segment_key = segment_mapping[segment_value]
-print(f"Segment detected: {segment_key}")
-
-# Load JSON config
-with open(JSON_CONFIG_FILE) as f:
-    ingestion_json = json.load(f)
-
-top_level_key = list(ingestion_json.keys())[0]
-file_config = ingestion_json[top_level_key]
-segment_config = file_config[segment_key]
-
-schema = segment_config["schema"]
-mapping = segment_config["mapping"]
-dedup_keys = segment_config["dedup_keys"]
-target_table = segment_config["target_table"]
+    except Exception as e:
+        print(f"Error: {e}")
+        if audit_id:
+            update_audit_log(spark, audit_id, "FAILED", str(e), 0, start_time)
+        raise

@@ -1,116 +1,63 @@
-import sys
-import uuid
-import json
-import datetime
-from pathlib import Path
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit, to_date, row_number, col, expr
-from pyspark.sql.window import Window
-from pyspark.sql.functions import sha2, concat_ws
+        # ------------ Step 4: Read file from HDFS ------------
+        hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
+        raw = spark.read.text(hdfs_path)
 
-# Add the project root to sys.path so Python can find 'configs'
-sys.path.append(str(Path(__file__).resolve().parents[2]))
+        # Collect lines (header + body + footer)
+        lines = raw.collect()
 
-# ------------ Shared Imports ------------
-from configs.config_file import fetch_config_params, delete_target_table, write_to_oracle, get_table_count, add_audit_columns, build_reject_table_name
-from configs.audit_file import insert_audit_log, update_audit_log
-from configs.oracle_connection import ora_src_conn_init
-from configs.hdfs_file_operations import copy_file_nas_to_hdfs, archive_file_from_hdfs
+        # Header is always first line
+        header = lines[0].value
 
-# ------------ CONFIG ------------
-JSON_CONFIG_FILE = Path(__file__).parents[2] / "trades" / "config" / "ingestion_config.json"
-print(f"JSON Config File Path: {JSON_CONFIG_FILE}")
+        # Footer is always last line
+        footer = lines[-1].value
 
-# ------------ Initialize Spark Session ------------
-def initialize_spark(project_name, job_id, env):
-    """ Initialize Spark Session with the given project name, job ID, and environment. """
-    return (SparkSession.builder
-            .master("yarn")
-            .appName(f"{project_name}_{job_id}")
-            .config("spark.app.env", env)
-            .getOrCreate())
+        # Everything between header and footer are data rows
+        data_lines = lines[1:-1]
 
-# ------------ MAIN ------------
-def main():
-    print("Starting GIW File Validation and Stage Load Process")
-    project_name = "PUP-TRADE"
-    job_id = "10"
-    env = "dev"
+        print(f"Header: {header}")
+        print(f"Footer: {footer}")
 
-    spark = initialize_spark(project_name, job_id, env)
+        # Parse header to get file date
+        header_parts = header.split(field_separator)
+        header_filedate = header_parts[2][0:8]
+        print(f"Header File Date: {header_filedate}")
 
-    # Set the job start time
-    start_time = datetime.datetime.now()
-    audit_id = None
-    file_archived = False
-    archive_location = None
+        # Parse footer to get row count and checksum
+        footer_parts = footer.split(field_separator)
+        footer_count = int(footer_parts[1])
+        print(f"Footer Count: {footer_count}")
+        footer_chksum = int(footer_parts[2])
+        print(f"Footer Checksum: {footer_chksum}")
 
-    try:
-        # 1. Get the job configuration data
-        print(f"Fetching job config data for project: {project_name}, job_id: {job_id}")
-        job_config_data = fetch_config_params(spark, project_name, job_id)
-        print(f"Job Config Data: {job_config_data}")
+        # Convert raw rows into DataFrame
+        expected_cols = 38
+        parsed_rows = []
 
-        if not job_config_data:
-            print(f"No config found for job ID {job_id} in project {project_name}")
-            return
+        for row in data_lines:
+            parts = row.value.split(field_separator)
 
-        for row in job_config_data:
-            project_name = row.PROJECT_NAME
-            job_id = row.JOB_ID
-            job_name = row.JOB_NAME
-            source_system = row.SOURCE_SYSTEM
-            file_name = row.FILE_NAME
-            file_source_path = row.FILE_SOURCE_PATH
-            hdfs_file_load_path = row.HDFS_FILE_LOAD_PATH
-            file_archive_path = row.FILE_ARCHIVE_PATH
-            file_load_failed = row.FILE_LOAD_FAILED
-            file_extension = row.FILE_EXTENSION
-            field_separator = row.FIELD_SEPARATOR
-            target_table = row.TARGET_TABLE
-            target_connection_name = row.TARGET_CONNECTION_NAME
-            inserted_date = row.INSERTED_DATE
-            updated_date = row.UPDATED_DATE
-            inserted_user = row.INSERTED_USER
-            updated_user = row.UPDATED_USER
+            if len(parts) < expected_cols:
+                parts = parts + [None] * (expected_cols - len(parts))
+            elif len(parts) > expected_cols:
+                parts = parts[:expected_cols]
 
-            # Print all variable values
-            print(f"project_name: {project_name}")
-            print(f"job_id: {job_id}")
-            print(f"job_name: {job_name}")
-            print(f"source_system: {source_system}")
-            print(f"file_name: {file_name}")
-            print(f"file_source_path: {file_source_path}")
-            print(f"hdfs_file_load_path: {hdfs_file_load_path}")
-            print(f"file_archive_path: {file_archive_path}")
-            print(f"file_load_failed: {file_load_failed}")
-            print(f"field_separator: {field_separator}")
-            print(f"target_table: {target_table}")
-            print(f"target_connection_name: {target_connection_name}")
+            parsed_rows.append(parts)
 
-        # 2. Transfer file from NAS to HDFS
-        print(f"Copying file from NAS to HDFS: {file_source_path} to {hdfs_file_load_path}")
-        complete_local_file_path, actual_file_name, file_last_modified_time = copy_file_nas_to_hdfs(
-            spark, file_source_path, hdfs_file_load_path, file_name
+        # Create DataFrame
+        df_raw = spark.createDataFrame(parsed_rows)
+
+        source_count = df_raw.count()
+        print(f"Source Count: {source_count}")
+        df_raw.show(5)
+
+        # Compute checksum
+        checksum_df = df_raw.withColumn(
+            "checksum", sha2(concat_ws("|", *df_raw.columns), 256)
         )
+        checksum_df.show(5)
 
-        print(f"File copied successfully: {actual_file_name}, Last Modified Time: {file_last_modified_time}")
-        print(f"Complete Local File Path: {complete_local_file_path}")
+        final_checksum = checksum_df.selectExpr(
+            "sha2(concat_ws('|', collect_list(checksum)), 256) as final_checksum"
+        ).collect()[0]["final_checksum"]
 
-        # 3. Audit - Start
-        print("Starting Audit Log Entry")
-        audit_id = insert_audit_log(
-            spark, project_name, job_id, job_name, source_system, actual_file_name,
-            file_last_modified_time, start_time
-        )
-        print(f"Audit Log Entry Created with ID: {audit_id}")
-
-        # Parse extracted file date
-        file_name_parts = actual_file_name.split('_')
-        if len(file_name_parts) > 8:
-            file_date_raw = file_name_parts[8]
-            file_date = file_date_raw.replace('.dat', '').replace('.txt', '')
-            print(f"Extracted File Date: {file_date}")
-        else:
-            print(f"Warning: Filename '{actual_file_name}' doesn't have expected format")
-            file_date = "UNKNOWN"
+        print(f"Computed Checksum: {final_checksum}")

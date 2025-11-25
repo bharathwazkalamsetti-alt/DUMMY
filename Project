@@ -1,30 +1,21 @@
-with open(JSON_CONFIG_FILE) as f:
-    ingestion_json = json.load(f)
+# input_file_path = "hdfs:///your/hdfs/path/to/file.txt"
 
-# ---------------------------------------------------
-# 1. Detect the correct top-level JSON key
-# ---------------------------------------------------
-top_level_key = list(ingestion_json.keys())[0]
-file_config = ingestion_json[top_level_key]
+# Read first two lines using Spark
+rdd = spark.sparkContext.textFile(input_file_path)
+first_two = rdd.take(2)
 
-# ---------------------------------------------------
-# 2. Read header + next line properly
-# ---------------------------------------------------
-with open(input_file_path, "r") as file:   # <<< FIX: file is now defined
-    header = file.readline()                # read header row
-    next_line = file.readline()             # read first data row
+header = first_two[0]
+next_line = first_two[1]
 
+# Get segment value
 first_col = header.split(field_separator)[0]
 
-# Determine segment value
 if first_col.upper() == "HEAD":
     segment_value = next_line.split(field_separator)[0]
 else:
     segment_value = first_col
 
-# ---------------------------------------------------
-# 3. Map segment code to SEG key
-# ---------------------------------------------------
+# Map to SEG keys
 segment_mapping = {
     "0001": "SEG1",
     "0002": "SEG2",
@@ -36,19 +27,17 @@ if segment_value not in segment_mapping:
     raise Exception(f"Unknown segment code: {segment_value}")
 
 segment_key = segment_mapping[segment_value]
-
 print(f"Segment detected: {segment_key}")
 
-# ---------------------------------------------------
-# 4. Load SEG config from JSON
-# ---------------------------------------------------
+# Load JSON config
+with open(JSON_CONFIG_FILE) as f:
+    ingestion_json = json.load(f)
+
+top_level_key = list(ingestion_json.keys())[0]
+file_config = ingestion_json[top_level_key]
 segment_config = file_config[segment_key]
 
 schema = segment_config["schema"]
 mapping = segment_config["mapping"]
 dedup_keys = segment_config["dedup_keys"]
 target_table = segment_config["target_table"]
-
-print(f"Schema Columns: {schema}")
-print(f"Mapping: {mapping}")
-print(f"Dedup Keys: {dedup_keys}")

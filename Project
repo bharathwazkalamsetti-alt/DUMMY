@@ -4,21 +4,21 @@ with open(JSON_CONFIG_FILE) as f:
 # ---------------------------------------------------
 # 1. Detect the correct top-level JSON key
 # ---------------------------------------------------
-# Example: ICG_REM_TXN_SMRY_GIW_TRD_CITIKYC_GLOBAL
 top_level_key = list(ingestion_json.keys())[0]
-
 file_config = ingestion_json[top_level_key]
 
 # ---------------------------------------------------
-# 2. Get segment value (skip header if needed)
+# 2. Read header + next line properly
 # ---------------------------------------------------
+with open(input_file_path, "r") as file:   # <<< FIX: file is now defined
+    header = file.readline()                # read header row
+    next_line = file.readline()             # read first data row
+
 first_col = header.split(field_separator)[0]
 
-# If we hit the header, read the next row from file
+# Determine segment value
 if first_col.upper() == "HEAD":
-    # Read the next line from your input file
-    data_line = file.readline()
-    segment_value = data_line.split(field_separator)[0]
+    segment_value = next_line.split(field_separator)[0]
 else:
     segment_value = first_col
 

@@ -1,63 +1,71 @@
-        # ------------ Step 4: Read file from HDFS ------------
-        hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
-        raw = spark.read.text(hdfs_path)
+# ------------ Step 4: Read file from HDFS ------------
+hdfs_path = f"{hdfs_file_load_path}/{file_name}*"
+raw = spark.read.text(hdfs_path)
 
-        # Collect lines (header + body + footer)
-        lines = raw.collect()
+# Collect lines (header + body + footer)
+lines = raw.collect()
 
-        # Header is always first line
-        header = lines[0].value
+# Header is always first line
+header = lines[0].value
 
-        # Footer is always last line
-        footer = lines[-1].value
+# Footer is always last line
+footer = lines[-1].value
 
-        # Everything between header and footer are data rows
-        data_lines = lines[1:-1]
+# Everything between header and footer are data rows
+data_lines = lines[1:-1]
 
-        print(f"Header: {header}")
-        print(f"Footer: {footer}")
+print(f"Header: {header}")
+print(f"Footer: {footer}")
 
-        # Parse header to get file date
-        header_parts = header.split(field_separator)
-        header_filedate = header_parts[2][0:8]
-        print(f"Header File Date: {header_filedate}")
+# Parse header to get file date
+header_parts = header.split(field_separator)
+header_filedate = header_parts[2][0:8]
+print(f"Header File Date: {header_filedate}")
 
-        # Parse footer to get row count and checksum
-        footer_parts = footer.split(field_separator)
-        footer_count = int(footer_parts[1])
-        print(f"Footer Count: {footer_count}")
-        footer_chksum = int(footer_parts[2])
-        print(f"Footer Checksum: {footer_chksum}")
+# Parse footer to get row count and checksum
+footer_parts = footer.split(field_separator)
+footer_count = int(footer_parts[1])
+print(f"Footer Count: {footer_count}")
+footer_chksum = int(footer_parts[2])
+print(f"Footer Checksum: {footer_chksum}")
 
-        # Convert raw rows into DataFrame
-        expected_cols = 38
-        parsed_rows = []
+# ------------ Convert raw rows into DataFrame ------------
+expected_cols = 38
+parsed_rows = []
 
-        for row in data_lines:
-            parts = row.value.split(field_separator)
+for row in data_lines:
+    parts = row.value.split(field_separator)
 
-            if len(parts) < expected_cols:
-                parts = parts + [None] * (expected_cols - len(parts))
-            elif len(parts) > expected_cols:
-                parts = parts[:expected_cols]
+    if len(parts) < expected_cols:
+        parts = parts + [None] * (expected_cols - len(parts))
+    elif len(parts) > expected_cols:
+        parts = parts[:expected_cols]
 
-            parsed_rows.append(parts)
+    parsed_rows.append(parts)
 
-        # Create DataFrame
-        df_raw = spark.createDataFrame(parsed_rows)
+# 👉 FIX: Define proper column names so dataframe looks correct
+schema = [f"COL{i}" for i in range(1, expected_cols + 1)]
+# If you have schema in JSON: schema = config[segment]["schema"]
 
-        source_count = df_raw.count()
-        print(f"Source Count: {source_count}")
-        df_raw.show(5)
+# Create DataFrame with column names
+df_raw = spark.createDataFrame(parsed_rows, schema=schema)
 
-        # Compute checksum
-        checksum_df = df_raw.withColumn(
-            "checksum", sha2(concat_ws("|", *df_raw.columns), 256)
-        )
-        checksum_df.show(5)
+# Show data count
+source_count = df_raw.count()
+print(f"Source Count: {source_count}")
 
-        final_checksum = checksum_df.selectExpr(
-            "sha2(concat_ws('|', collect_list(checksum)), 256) as final_checksum"
-        ).collect()[0]["final_checksum"]
+df_raw.show(5)
 
-        print(f"Computed Checksum: {final_checksum}")
+# ------------ Compute checksum ------------
+checksum_df = df_raw.withColumn(
+    "checksum",
+    sha2(concat_ws("|", *df_raw.columns), 256)
+)
+
+checksum_df.show(5)
+
+final_checksum = checksum_df.selectExpr(
+    "sha2(concat_ws('|', collect_list(checksum)), 256) as final_checksum"
+).collect()[0]["final_checksum"]
+
+print(f"Computed Checksum: {final_checksum}")

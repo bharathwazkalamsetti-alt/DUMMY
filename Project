@@ -1,5 +1,7 @@
-from pyspark.sql.functions import split, col
+df_formatted = spark.createDataFrame(
+    [(row.value.replace(field_separator, " | "),) for row in data_lines],
+    ["row_text"]
+)
 
-df_raw = spark.createDataFrame([(r.value,) for r in data_lines], ["value"]) \
-               .withColumn("cols", split(col("value"), field_separator)) \
-               .select("cols")
+df_formatted.show(truncate=False)
+source_count = df_formatted.count()

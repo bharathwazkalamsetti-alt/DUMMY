@@ -1,24 +1,5 @@
-with open(JSON_CONFIG_FILE) as f:
-    ingestion_json = json.load(f)
+from pyspark.sql.functions import split, col
 
-file_config = ingestion_json["ICG_REM_TXN_SMRY_GIW_TRD_CITYKYC_GLOBAL"]
-# get the segment from the first data row, not the header
-segment_value = df_raw.first()[0]  # assumes first column is the segment code
-
-segment_map = {"0001": "SEG1", "0002": "SEG2", "0003": "SEG3", "0004": "SEG4"}
-segment_key = segment_map.get(segment_value)
-if not segment_key:
-    raise Exception(f"Unknown segment code: {segment_value}")
-
-print(f"Segment detected: {segment_key}")
-
-segment_config = file_config[segment_key]
-schema = segment_config["schema"]
-mapping = segment_config["mapping"]
-dedup_keys = segment_config["dedup_keys"]
-target_table = segment_config["target_table"]
-
-print(f"Schema Columns: {schema}")
-print(f"Mapping: {mapping}")
-print(f"Dedup Keys: {dedup_keys}")
-print(f"Target Table: {target_table}")
+df_raw = spark.createDataFrame([(r.value,) for r in data_lines], ["value"]) \
+               .withColumn("cols", split(col("value"), field_separator)) \
+               .select("cols")

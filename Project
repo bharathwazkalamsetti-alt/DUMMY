@@ -1,7 +1,117 @@
-df_formatted = spark.createDataFrame(
-    [(row.value.replace(field_separator, " | "),) for row in data_lines],
-    ["row_text"]
+# ------------ 6. Load JSON schema, validate, and load STG using config ------------
+from pyspark.sql import Window
+from pyspark.sql.functions import col, when, sum as _sum, row_number
+
+with open(JSON_CONFIG_FILE) as f:
+    ingestion_json = json.load(f)
+
+file_config = ingestion_json["ICG_REM_TXN_SMRY_GIW_TRD_CITYKYC_GLOBAL"]
+segment_map = {"0001": "SEG1", "0002": "SEG2", "0003": "SEG3", "0004": "SEG4"}
+
+# normalize df_raw to the widest schema
+max_schema_cols = max(len(seg["schema"]) for seg in file_config.values())
+df_norm = (
+    df_raw.rdd
+    .map(lambda r: list(r) + [None] * (max_schema_cols - len(r)) if len(r) < max_schema_cols else list(r)[:max_schema_cols])
+    .toDF([f"c{i}" for i in range(max_schema_cols)])
 )
 
-df_formatted.show(truncate=False)
-source_count = df_formatted.count()
+def apply_field_count(df, exp_count):
+    cnt_expr = sum([when(col(f"c{i}").isNotNull(), 1).otherwise(0) for i in range(max_schema_cols)])
+    return df.withColumn("field_count", cnt_expr).filter(col("field_count") == exp_count).drop("field_count")
+
+def dedup_latest(df, keys, order_cols):
+    sort_expr = [col(c).desc() for c in order_cols]
+    w = Window.partitionBy([col(k) for k in keys]).orderBy(*sort_expr)
+    return df.withColumn("rn", row_number().over(w)).filter(col("rn") == 1).drop("rn")
+
+def rollup(df, keys, sum_cols):
+    agg_exprs = [_sum(col(c)).alias(c) for c in sum_cols]
+    return df.groupBy(keys).agg(*agg_exprs)
+
+for seg_code, seg_key in segment_map.items():
+    if seg_key not in file_config:
+        continue
+    cfg = file_config[seg_key]
+    schema_cols = cfg["schema"]
+    target_table = cfg["target_table"]
+    field_count = cfg.get("field_count", max_schema_cols)
+    dedup_keys = cfg.get("dedup_keys", [])
+    dedup_order = cfg.get("dedup_order", ["lst_upd_dt", "lst_upd_time"])
+    rollup_keys = cfg.get("rollup_keys", dedup_keys)
+    rollup_sums = cfg.get("rollup_sums", [c for c in schema_cols if c not in rollup_keys])
+
+    # slice rows and enforce field count
+    df_seg = df_norm.filter(col("c0") == seg_code)
+    df_seg = apply_field_count(df_seg, field_count)
+
+    # select/alias to schema
+    df_seg = df_seg.select([col(f"c{i}").alias(schema_cols[i]) for i in range(len(schema_cols))])
+
+    # dedup and rollup
+    if dedup_keys:
+        df_seg = dedup_latest(df_seg, dedup_keys, dedup_order)
+    if rollup_keys and rollup_sums:
+        df_seg = rollup(df_seg, rollup_keys, rollup_sums)
+
+    # add audit and load
+    df_seg = add_audit_columns(df_seg)
+    write_to_oracle(df_seg, target_table, cfg.get("target_connection_name", target_connection_name))
+    print(f"Wrote {seg_key} ({seg_code}) -> {target_table}, rows: {df_seg.count()}")
+
+
+
+{
+  "ICG_REM_TXN_SMRY_GIW_TRD_CITYKYC_GLOBAL": {
+    "SEG1": {
+      "schema": [...],
+      "dedup_keys": ["seg_ind","batch_dt","id","id_type","client_type","country","month","year"],
+      "dedup_order": ["lst_upd_dt","lst_upd_time"],
+      "rollup_keys": ["seg_ind","batch_dt","id","id_type","client_type","country","month","year"],
+      "rollup_sums": ["trad_ser_imp_cnt","trad_ser_imp_amt","trad_ser_exp_cnt","trad_ser_exp_amt",
+                      "trad_ser_std_lc_guarantee_cnt","trad_ser_std_lc_guarantee_amt",
+                      "trad_fin_imp_cnt","trad_fin_imp_amt","trad_fin_exp_cnt","trad_fin_exp_amt",
+                      "trad_fin_garp_cnt","trad_fin_garp_amt","trad_fin_sup_cnt","trad_fin_sup_amt",
+                      "trad_fin_commodities_cnt","trad_fin_commodities_amt",
+                      "fi_trad_adv_cnt","fi_trad_adv_amt","fi_trad_loc_cnt","fi_trad_loc_amt",
+                      "fi_std_loc_cnt","fi_std_loc_amt","fi_reim_auth_cnt","fi_reim_auth_amt",
+                      "cdl_pymt_inst_servc_req_cnt","cdl_pymt_inst_servc_req_amt",
+                      "cdl_pymt_inst_servc_prov_cnt","cdl_pymt_inst_servc_prov_amt",
+                      "cdl_pymt_inst_goods_sales_cnt","cdl_pymt_inst_goods_sales_amt",
+                      "cdl_pymt_inst_goods_purch_cnt","cdl_pymt_inst_goods_purch_amt"],
+      "field_count": 38,
+      "target_table": "TRADE_TXN_SMRY"
+    },
+    "SEG2": {
+      "schema": [...],
+      "dedup_keys": ["seg_ind","id","client_type","country","month","year","juris_country"],
+      "dedup_order": ["lst_upd_dt","lst_upd_time"],
+      "rollup_keys": ["seg_ind","id","client_type","country","month","year","juris_country"],
+      "rollup_sums": ["trad_ser_imp_amt","trad_ser_exp_amt","trad_ser_std_lc_guarantee_amt",
+                      "trad_fin_garp_amt","trad_fin_sup_amt",
+                      "cdl_pymt_inst_servc_req_amt","cdl_pymt_inst_servc_prov_amt",
+                      "cdl_pymt_inst_goods_sales_amt","cdl_pymt_inst_goods_purch_amt"],
+      "field_count": 18,
+      "target_table": "TRADE_TXN_SMRY_JURIS"
+    },
+    "SEG3": {
+      "schema": [...],
+      "dedup_keys": ["seg_ind","id","client_type","country","month","year","commodity_code"],
+      "dedup_order": ["lst_upd_dt","lst_upd_time"],
+      "rollup_keys": ["seg_ind","id","client_type","country","month","year","commodity_code"],
+      "rollup_sums": ["trad_ser_imp_amt","trad_ser_exp_amt",
+                      "cdl_pymt_inst_goods_sales_amt","cdl_pymt_inst_goods_purch_amt"],
+      "field_count": 13,
+      "target_table": "TRADE_TXN_COMMODITY_SMRY"
+    },
+    "SEG4": {
+      "schema": [...],
+      "dedup_keys": ["seg_ind","id","client_type","country","month","year","actvty_juris"],
+      "dedup_order": ["lst_upd_dt","lst_upd_time"],
+      "rollup_keys": ["seg_ind","id","client_type","country","month","year","actvty_juris"],
+      "rollup_sums": ["trad_fin_commodities_amt","fi_loc_juris_amt","fi_std_lc_guarantee_amt"],
+      "field_count": 12,
+      "target_table": "TRADE_TXN_LC_SMRY_JURIS"
+    }
+  }
+}
